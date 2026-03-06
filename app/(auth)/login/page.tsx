@@ -13,6 +13,10 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
+type EmailLookupRow = {
+  email: string;
+};
+
 export default function LoginPage() {
   const [serverError, setServerError] = useState<string>("");
   const [serverSuccess, setServerSuccess] = useState<string>("");
@@ -33,22 +37,40 @@ export default function LoginPage() {
     setServerError("");
     setServerSuccess("");
 
-    const isEmail = data.identifier.includes("@");
+    const normalizedIdentifier = data.identifier.trim().toLowerCase();
+    const password = data.password;
+
+    let emailToUse = normalizedIdentifier;
+    const isEmail = normalizedIdentifier.includes("@");
 
     if (!isEmail) {
-      setServerError(
-        "Por ahora el login funcional está habilitado solo con correo y contraseña."
+      const { data: result, error: rpcError } = await supabase.rpc(
+        "get_email_by_username",
+        { input_username: normalizedIdentifier }
       );
-      return;
+
+      if (rpcError) {
+        setServerError("No se pudo validar el nombre de usuario.");
+        return;
+      }
+
+      const rows = result as EmailLookupRow[] | null;
+
+      if (!rows || rows.length === 0 || !rows[0]?.email) {
+        setServerError("No existe una cuenta con ese nombre de usuario.");
+        return;
+      }
+
+      emailToUse = rows[0].email;
     }
 
     const { error } = await supabase.auth.signInWithPassword({
-      email: data.identifier,
-      password: data.password,
+      email: emailToUse,
+      password,
     });
 
     if (error) {
-      setServerError(error.message);
+      setServerError("Credenciales incorrectas.");
       return;
     }
 

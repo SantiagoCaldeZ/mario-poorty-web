@@ -41,10 +41,13 @@ export default function RegisterPage() {
     setServerError("");
     setServerSuccess("");
 
+    const normalizedEmail = data.email.trim().toLowerCase();
+    const normalizedUsername = data.username.trim().toLowerCase();
+
     const { data: existingProfile, error: usernameCheckError } = await supabase
       .from("profiles")
       .select("id")
-      .eq("username", data.username)
+      .eq("username", normalizedUsername)
       .maybeSingle();
 
     if (usernameCheckError) {
@@ -58,11 +61,11 @@ export default function RegisterPage() {
     }
 
     const { error: signUpError } = await supabase.auth.signUp({
-      email: data.email,
+      email: normalizedEmail,
       password: data.password,
       options: {
         data: {
-          username: data.username,
+          username: normalizedUsername,
         },
       },
     });
