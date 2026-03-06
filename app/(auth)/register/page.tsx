@@ -41,7 +41,23 @@ export default function RegisterPage() {
     setServerError("");
     setServerSuccess("");
 
-    const { error } = await supabase.auth.signUp({
+    const { data: existingProfile, error: usernameCheckError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("username", data.username)
+      .maybeSingle();
+
+    if (usernameCheckError) {
+      setServerError("No se pudo validar el nombre de usuario.");
+      return;
+    }
+
+    if (existingProfile) {
+      setServerError("Ese nombre de usuario ya está en uso.");
+      return;
+    }
+
+    const { error: signUpError } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
       options: {
@@ -51,8 +67,8 @@ export default function RegisterPage() {
       },
     });
 
-    if (error) {
-      setServerError(error.message);
+    if (signUpError) {
+      setServerError(signUpError.message);
       return;
     }
 
