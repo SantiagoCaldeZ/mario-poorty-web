@@ -64,14 +64,18 @@ export default function LoginPage() {
       emailToUse = rows[0].email;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: emailToUse,
-      password,
+    const { data: signInData, error } = await supabase.auth.signInWithPassword({
+        email: emailToUse,
+        password,
     });
 
+    console.log("emailToUse:", emailToUse);
+    console.log("signInData:", signInData);
+    console.log("signInError:", error);
+
     if (error) {
-      setServerError("Credenciales incorrectas.");
-      return;
+        setServerError(error.message);
+        return;
     }
 
     setServerSuccess("Inicio de sesión correcto.");
