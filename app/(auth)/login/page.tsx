@@ -1,13 +1,69 @@
+"use client";
+
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { supabase } from "@/lib/supabase";
+
+const loginSchema = z.object({
+  identifier: z.string().min(1, "Debes ingresar tu correo o usuario."),
+  password: z.string().min(1, "Debes ingresar tu contraseña."),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
+
 export default function LoginPage() {
+  const [serverError, setServerError] = useState<string>("");
+  const [serverSuccess, setServerSuccess] = useState<string>("");
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      identifier: "",
+      password: "",
+    },
+  });
+
+  const onSubmit = async (data: LoginFormData) => {
+    setServerError("");
+    setServerSuccess("");
+
+    const isEmail = data.identifier.includes("@");
+
+    if (!isEmail) {
+      setServerError(
+        "Por ahora el login funcional está habilitado solo con correo y contraseña."
+      );
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: data.identifier,
+      password: data.password,
+    });
+
+    if (error) {
+      setServerError(error.message);
+      return;
+    }
+
+    setServerSuccess("Inicio de sesión correcto.");
+  };
+
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-100">
+    <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md">
         <h1 className="text-2xl font-bold text-gray-900">Iniciar sesión</h1>
         <p className="mt-2 text-sm text-gray-600">
           Ingresa con tu correo o nombre de usuario y tu contraseña.
         </p>
 
-        <form className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Correo o nombre de usuario
@@ -16,7 +72,13 @@ export default function LoginPage() {
               type="text"
               placeholder="correo o usuario"
               className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
+              {...register("identifier")}
             />
+            {errors.identifier && (
+              <p className="mt-1 text-sm text-red-600">
+                {errors.identifier.message}
+              </p>
+            )}
           </div>
 
           <div>
@@ -27,14 +89,33 @@ export default function LoginPage() {
               type="password"
               placeholder="********"
               className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
+              {...register("password")}
             />
+            {errors.password && (
+              <p className="mt-1 text-sm text-red-600">
+                {errors.password.message}
+              </p>
+            )}
           </div>
+
+          {serverError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              {serverError}
+            </p>
+          )}
+
+          {serverSuccess && (
+            <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+              {serverSuccess}
+            </p>
+          )}
 
           <button
             type="submit"
-            className="w-full rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90"
+            disabled={isSubmitting}
+            className="w-full rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
           >
-            Entrar
+            {isSubmitting ? "Entrando..." : "Entrar"}
           </button>
         </form>
       </div>
