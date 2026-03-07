@@ -20,11 +20,9 @@ export default function CreateLobbyPage() {
   const [matchType, setMatchType] = useState<"public" | "private">("public");
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [serverSuccess, setServerSuccess] = useState("");
 
   const handleCreateLobby = async () => {
     setServerError("");
-    setServerSuccess("");
     setLoading(true);
 
     const {
@@ -37,13 +35,33 @@ export default function CreateLobbyPage() {
       return;
     }
 
-    const hostId = session.user.id;
+    const userId = session.user.id;
+
+    const { data: existingMembership, error: membershipError } = await supabase
+      .from("lobby_players")
+      .select("id, lobby_id, lobbies!inner(status)")
+      .eq("user_id", userId)
+      .in("lobbies.status", ["waiting", "in_game"])
+      .maybeSingle();
+
+    if (membershipError) {
+      setServerError("No se pudo validar si ya perteneces a una sala.");
+      setLoading(false);
+      return;
+    }
+
+    if (existingMembership) {
+      setServerError("Ya perteneces a una sala activa. Debes salir de ella primero.");
+      setLoading(false);
+      return;
+    }
+
     const roomCode = matchType === "private" ? generateRoomCode() : null;
 
-    const { data, error } = await supabase
+    const { data: lobbyData, error: lobbyError } = await supabase
       .from("lobbies")
       .insert({
-        host_id: hostId,
+        host_id: userId,
         type: matchType,
         room_code: roomCode,
         status: "waiting",
@@ -51,21 +69,26 @@ export default function CreateLobbyPage() {
       .select()
       .single();
 
-    if (error) {
-      setServerError(error.message);
+    if (lobbyError || !lobbyData) {
+      setServerError(lobbyError?.message ?? "No se pudo crear la sala.");
       setLoading(false);
       return;
     }
 
-    setServerSuccess(
-      matchType === "private"
-        ? `Sala privada creada. Código: ${data.room_code}`
-        : "Sala pública creada correctamente."
-    );
+    const { error: playerError } = await supabase.from("lobby_players").insert({
+      lobby_id: lobbyData.id,
+      user_id: userId,
+      is_host: true,
+    });
+
+    if (playerError) {
+      setServerError(playerError.message);
+      setLoading(false);
+      return;
+    }
 
     setLoading(false);
-
-    router.push(`/lobby/${data.id}`);
+    router.push(`/lobby/${lobbyData.id}`);
   };
 
   return (
@@ -113,12 +136,6 @@ export default function CreateLobbyPage() {
         {serverError && (
           <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {serverError}
-          </p>
-        )}
-
-        {serverSuccess && (
-          <p className="mt-6 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
-            {serverSuccess}
           </p>
         )}
 

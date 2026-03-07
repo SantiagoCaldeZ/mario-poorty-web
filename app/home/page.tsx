@@ -27,6 +27,18 @@ export default function HomePage() {
 
       const userId = session.user.id;
 
+      const { data: activeMembership } = await supabase
+        .from("lobby_players")
+        .select("lobby_id, lobbies!inner(status)")
+        .eq("user_id", userId)
+        .in("lobbies.status", ["waiting", "in_game"])
+        .maybeSingle();
+
+      if (activeMembership?.lobby_id) {
+        router.replace(`/lobby/${activeMembership.lobby_id}`);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("profiles")
         .select("username, email")
@@ -83,19 +95,19 @@ export default function HomePage() {
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             <button
-                type="button"
-                onClick={() => router.push("/lobby/create")}
-                className="rounded-lg bg-black px-4 py-3 text-white transition hover:opacity-90"
+              type="button"
+              onClick={() => router.push("/lobby/create")}
+              className="rounded-lg bg-black px-4 py-3 text-white transition hover:opacity-90"
             >
-                Crear partida
+              Crear partida
             </button>
 
             <button
-                type="button"
-                onClick={() => router.push("/lobby/join")}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 transition hover:bg-gray-50"
+              type="button"
+              onClick={() => router.push("/lobby/join")}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 transition hover:bg-gray-50"
             >
-                Unirse a partida
+              Unirse a partida
             </button>
           </div>
 
