@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 const loginSchema = z.object({
   identifier: z.string().min(1, "Debes ingresar tu correo o usuario."),
@@ -18,6 +19,7 @@ type EmailLookupRow = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const [serverError, setServerError] = useState<string>("");
   const [serverSuccess, setServerSuccess] = useState<string>("");
 
@@ -78,7 +80,7 @@ export default function LoginPage() {
         return;
     }
 
-    setServerSuccess("Inicio de sesión correcto.");
+    router.push("/home");
   };
 
   return (
