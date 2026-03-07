@@ -119,7 +119,11 @@ export default function CreateLobbyPage() {
     });
 
     if (playerError) {
-      setServerError(playerError.message);
+      await supabase.from("lobbies").delete().eq("id", lobbyData.id);
+
+      setServerError(
+        "No se pudo registrar al host en la sala. Se canceló la creación del lobby."
+      );
       setLoading(false);
       return;
     }

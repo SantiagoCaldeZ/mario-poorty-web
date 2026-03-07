@@ -57,7 +57,28 @@ export default function LobbyDetailPage() {
         return;
       }
 
-      setCurrentUserId(session.user.id);
+      const userId = session.user.id;
+      setCurrentUserId(userId);
+
+      // Verificar que el usuario pertenezca a esta sala
+      const { data: membership, error: membershipError } = await supabase
+        .from("lobby_players")
+        .select("id, is_host")
+        .eq("lobby_id", lobbyId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (membershipError) {
+        setServerError("No se pudo validar tu acceso a esta sala.");
+        setLoading(false);
+        return;
+      }
+
+      if (!membership) {
+        setServerError("No perteneces a esta sala.");
+        setLoading(false);
+        return;
+      }
 
       const { data: lobbyData, error: lobbyError } = await supabase
         .from("lobbies")

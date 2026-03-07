@@ -10,6 +10,7 @@ type PublicLobbyRow = {
   status: "waiting" | "in_game" | "finished" | "closed";
   created_at: string;
   host_id: string;
+  lobby_players: { id: string }[];
 };
 
 export default function JoinLobbyPage() {
@@ -23,7 +24,7 @@ export default function JoinLobbyPage() {
   const loadPublicLobbies = async () => {
     const { data: lobbyData, error: lobbyError } = await supabase
       .from("lobbies")
-      .select("id, room_code, status, created_at, host_id")
+      .select("id, room_code, status, created_at, host_id, lobby_players(id)")
       .eq("type", "public")
       .eq("status", "waiting")
       .order("created_at", { ascending: false });
@@ -145,6 +146,23 @@ export default function JoinLobbyPage() {
       return;
     }
 
+    const { data: currentPlayers, error: countError } = await supabase
+      .from("lobby_players")
+      .select("id")
+      .eq("lobby_id", lobbyData.id);
+
+    if (countError) {
+      setServerError("No se pudo validar la cantidad de jugadores.");
+      setLoading(false);
+      return;
+    }
+
+    if ((currentPlayers?.length ?? 0) >= 6) {
+      setServerError("La sala ya está llena.");
+      setLoading(false);
+      return;
+    }
+
     const { error: joinError } = await supabase.from("lobby_players").insert({
       lobby_id: lobbyData.id,
       user_id: userId,
@@ -226,6 +244,23 @@ export default function JoinLobbyPage() {
       setServerError("La sala ya no está disponible para unirse.");
       setLoading(false);
       await loadPublicLobbies();
+      return;
+    }
+
+    const { data: currentPlayers, error: countError } = await supabase
+      .from("lobby_players")
+      .select("id")
+      .eq("lobby_id", lobbyData.id);
+
+    if (countError) {
+      setServerError("No se pudo validar la cantidad de jugadores.");
+      setLoading(false);
+      return;
+    }
+
+    if ((currentPlayers?.length ?? 0) >= 6) {
+      setServerError("La sala ya está llena.");
+      setLoading(false);
       return;
     }
 
@@ -316,6 +351,10 @@ export default function JoinLobbyPage() {
                     <p>
                       <span className="font-semibold">Creada en:</span>{" "}
                       {new Date(lobby.created_at).toLocaleString()}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Jugadores:</span>{" "}
+                      {lobby.lobby_players?.length ?? 0}
                     </p>
                   </div>
 
