@@ -1,0 +1,17 @@
+create policy "Authenticated users can view lobby_players"
+on public.lobby_players
+for select
+to authenticated
+using (true);
+
+create policy "Authenticated users can insert lobby_players"
+on public.lobby_players
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+create policy "Users can delete their own lobby_players row"
+on public.lobby_players
+for delete
+to authenticated
+using (auth.uid() = user_id);
