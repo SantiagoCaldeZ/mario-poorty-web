@@ -27,12 +27,17 @@ export default function HomePage() {
 
       const userId = session.user.id;
 
-      const { data: activeMembership } = await supabase
+      const { data: activeMembership, error: membershipError } = await supabase
         .from("lobby_players")
         .select("lobby_id, lobbies!inner(status)")
         .eq("user_id", userId)
         .in("lobbies.status", ["waiting", "in_game"])
         .maybeSingle();
+
+      if (membershipError) {
+        setLoading(false);
+        return;
+      }
 
       if (activeMembership?.lobby_id) {
         router.replace(`/lobby/${activeMembership.lobby_id}`);

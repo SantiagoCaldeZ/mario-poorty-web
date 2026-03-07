@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -19,7 +19,44 @@ export default function CreateLobbyPage() {
   const router = useRouter();
   const [matchType, setMatchType] = useState<"public" | "private">("public");
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [serverError, setServerError] = useState("");
+
+  useEffect(() => {
+    const redirectIfAlreadyInLobby = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const userId = session.user.id;
+
+      const { data: activeMembership, error: membershipError } = await supabase
+        .from("lobby_players")
+        .select("lobby_id, lobbies!inner(status)")
+        .eq("user_id", userId)
+        .in("lobbies.status", ["waiting", "in_game"])
+        .maybeSingle();
+
+      if (membershipError) {
+        setPageLoading(false);
+        return;
+      }
+
+      if (activeMembership?.lobby_id) {
+        router.replace(`/lobby/${activeMembership.lobby_id}`);
+        return;
+      }
+
+      setPageLoading(false);
+    };
+
+    redirectIfAlreadyInLobby();
+  }, [router]);
 
   const handleCreateLobby = async () => {
     setServerError("");
@@ -90,6 +127,14 @@ export default function CreateLobbyPage() {
     setLoading(false);
     router.push(`/lobby/${lobbyData.id}`);
   };
+
+  if (pageLoading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+        <p className="text-gray-700">Cargando...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-100 px-4 py-10">

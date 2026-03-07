@@ -4,14 +4,40 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 
+type PublicLobbyRow = {
+  id: string;
+  room_code: string | null;
+  status: "waiting" | "in_game" | "finished" | "closed";
+  created_at: string;
+  host_id: string;
+};
+
 export default function JoinLobbyPage() {
   const router = useRouter();
   const [roomCode, setRoomCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [publicLobbies, setPublicLobbies] = useState<PublicLobbyRow[]>([]);
   const [serverError, setServerError] = useState("");
 
+  const loadPublicLobbies = async () => {
+    const { data: lobbyData, error: lobbyError } = await supabase
+      .from("lobbies")
+      .select("id, room_code, status, created_at, host_id")
+      .eq("type", "public")
+      .eq("status", "waiting")
+      .order("created_at", { ascending: false });
+
+    if (lobbyError) {
+      setServerError("No se pudieron cargar las partidas públicas.");
+      return;
+    }
+
+    setPublicLobbies((lobbyData ?? []) as PublicLobbyRow[]);
+  };
+
   useEffect(() => {
-    const redirectIfAlreadyInLobby = async () => {
+    const initializePage = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -23,22 +49,32 @@ export default function JoinLobbyPage() {
 
       const userId = session.user.id;
 
-      const { data: activeMembership } = await supabase
+      const { data: activeMembership, error: membershipError } = await supabase
         .from("lobby_players")
         .select("lobby_id, lobbies!inner(status)")
         .eq("user_id", userId)
         .in("lobbies.status", ["waiting", "in_game"])
         .maybeSingle();
 
+      if (membershipError) {
+        setServerError("No se pudo validar tu estado actual de lobby.");
+        setPageLoading(false);
+        return;
+      }
+
       if (activeMembership?.lobby_id) {
         router.replace(`/lobby/${activeMembership.lobby_id}`);
+        return;
       }
+
+      await loadPublicLobbies();
+      setPageLoading(false);
     };
 
-    redirectIfAlreadyInLobby();
+    initializePage();
   }, [router]);
 
-  const handleJoinLobby = async () => {
+  const handleJoinLobbyByCode = async () => {
     setServerError("");
     setLoading(true);
 
@@ -87,6 +123,7 @@ export default function JoinLobbyPage() {
       .from("lobbies")
       .select("id, room_code, type, status")
       .eq("room_code", normalizedCode)
+      .eq("type", "private")
       .maybeSingle();
 
     if (lobbyError) {
@@ -96,14 +133,15 @@ export default function JoinLobbyPage() {
     }
 
     if (!lobbyData) {
-      setServerError("No existe una sala con ese código.");
+      setServerError("No existe una sala privada con ese código.");
       setLoading(false);
       return;
     }
 
     if (lobbyData.status !== "waiting") {
-      setServerError("La sala ya no está disponible para unirse.");
+      setServerError("La sala privada ya no está disponible para unirse.");
       setLoading(false);
+      await loadPublicLobbies();
       return;
     }
 
@@ -122,25 +160,177 @@ export default function JoinLobbyPage() {
     router.push(`/lobby/${lobbyData.id}`);
   };
 
+  const handleJoinPublicLobby = async (lobbyId: string) => {
+    setServerError("");
+    setLoading(true);
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user) {
+      setServerError("Debes iniciar sesión para unirte a una sala.");
+      setLoading(false);
+      return;
+    }
+
+    const userId = session.user.id;
+
+    const { data: existingMembership, error: membershipError } = await supabase
+      .from("lobby_players")
+      .select("id, lobby_id, lobbies!inner(status)")
+      .eq("user_id", userId)
+      .in("lobbies.status", ["waiting", "in_game"])
+      .maybeSingle();
+
+    if (membershipError) {
+      setServerError("No se pudo validar si ya perteneces a una sala.");
+      setLoading(false);
+      return;
+    }
+
+    if (existingMembership) {
+      setServerError(
+        "Ya perteneces a una sala activa. Debes salir de ella primero."
+      );
+      setLoading(false);
+      return;
+    }
+
+    const { data: lobbyData, error: lobbyError } = await supabase
+      .from("lobbies")
+      .select("id, type, status")
+      .eq("id", lobbyId)
+      .maybeSingle();
+
+    if (lobbyError) {
+      setServerError(lobbyError.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!lobbyData) {
+      setServerError("La sala seleccionada ya no existe.");
+      setLoading(false);
+      await loadPublicLobbies();
+      return;
+    }
+
+    if (lobbyData.type !== "public") {
+      setServerError("Solo puedes unirte aquí a partidas públicas.");
+      setLoading(false);
+      return;
+    }
+
+    if (lobbyData.status !== "waiting") {
+      setServerError("La sala ya no está disponible para unirse.");
+      setLoading(false);
+      await loadPublicLobbies();
+      return;
+    }
+
+    const { error: joinError } = await supabase.from("lobby_players").insert({
+      lobby_id: lobbyData.id,
+      user_id: userId,
+      is_host: false,
+    });
+
+    if (joinError) {
+      setServerError(joinError.message);
+      setLoading(false);
+      return;
+    }
+
+    router.push(`/lobby/${lobbyData.id}`);
+  };
+
+  if (pageLoading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+        <p className="text-gray-700">Cargando...</p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-gray-100 px-4 py-10">
-      <div className="mx-auto max-w-2xl rounded-2xl bg-white p-8 shadow-md">
+      <div className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-md">
         <h1 className="text-3xl font-bold text-gray-900">Unirse a partida</h1>
         <p className="mt-2 text-gray-600">
-          Ingresa el código de una sala privada para unirte.
+          Puedes ingresar un código privado o unirte a una partida pública disponible.
         </p>
 
-        <div className="mt-8">
-          <label className="mb-2 block text-sm font-medium text-gray-700">
-            Código de sala
-          </label>
-          <input
-            type="text"
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            placeholder="ABC123"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-          />
+        <div className="mt-8 rounded-xl border border-gray-200 p-5">
+          <h2 className="text-xl font-semibold text-gray-900">
+            Unirse con código
+          </h2>
+
+          <div className="mt-4">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Código de sala
+            </label>
+            <input
+              type="text"
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+              placeholder="ABC123"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
+            />
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={handleJoinLobbyByCode}
+              disabled={loading}
+              className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
+            >
+              {loading ? "Uniéndose..." : "Unirse por código"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-xl border border-gray-200 p-5">
+          <h2 className="text-xl font-semibold text-gray-900">
+            Partidas públicas disponibles
+          </h2>
+
+          {publicLobbies.length === 0 ? (
+            <p className="mt-4 text-sm text-gray-600">
+              No hay partidas públicas disponibles en este momento.
+            </p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {publicLobbies.map((lobby) => (
+                <div
+                  key={lobby.id}
+                  className="flex flex-col gap-3 rounded-lg bg-gray-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="text-sm text-gray-700">
+                    <p>
+                      <span className="font-semibold">ID:</span> {lobby.id}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Estado:</span> {lobby.status}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Creada en:</span>{" "}
+                      {new Date(lobby.created_at).toLocaleString()}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleJoinPublicLobby(lobby.id)}
+                    disabled={loading}
+                    className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
+                  >
+                    Unirse
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {serverError && (
@@ -156,15 +346,6 @@ export default function JoinLobbyPage() {
             className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
           >
             Volver
-          </button>
-
-          <button
-            type="button"
-            onClick={handleJoinLobby}
-            disabled={loading}
-            className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
-          >
-            {loading ? "Uniéndose..." : "Unirse"}
           </button>
         </div>
       </div>
