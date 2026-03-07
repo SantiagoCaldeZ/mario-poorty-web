@@ -83,17 +83,19 @@ export default function HomePage() {
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             <button
-              type="button"
-              className="rounded-lg bg-black px-4 py-3 text-white transition hover:opacity-90"
+                type="button"
+                onClick={() => router.push("/lobby/create")}
+                className="rounded-lg bg-black px-4 py-3 text-white transition hover:opacity-90"
             >
-              Crear partida
+                Crear partida
             </button>
 
             <button
-              type="button"
-              className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 transition hover:bg-gray-50"
+                type="button"
+                onClick={() => router.push("/lobby/join")}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 transition hover:bg-gray-50"
             >
-              Unirse a partida
+                Unirse a partida
             </button>
           </div>
 
