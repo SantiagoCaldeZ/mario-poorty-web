@@ -1,0 +1,1 @@
+alter table public.lobby_players enable row level security;
