@@ -2,10 +2,62 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function JoinLobbyPage() {
   const router = useRouter();
   const [roomCode, setRoomCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [serverError, setServerError] = useState("");
+
+  const handleJoinLobby = async () => {
+    setServerError("");
+    setLoading(true);
+
+    const normalizedCode = roomCode.trim().toUpperCase();
+
+    if (!normalizedCode) {
+      setServerError("Debes ingresar un código de sala.");
+      setLoading(false);
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user) {
+      setServerError("Debes iniciar sesión para unirte a una sala.");
+      setLoading(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("lobbies")
+      .select("id, room_code, type, status")
+      .eq("room_code", normalizedCode)
+      .maybeSingle();
+
+    if (error) {
+      setServerError(error.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!data) {
+      setServerError("No existe una sala con ese código.");
+      setLoading(false);
+      return;
+    }
+
+    if (data.status !== "waiting") {
+      setServerError("La sala ya no está disponible para unirse.");
+      setLoading(false);
+      return;
+    }
+
+    router.push(`/lobby/${data.id}`);
+  };
 
   return (
     <main className="min-h-screen bg-gray-100 px-4 py-10">
@@ -27,9 +79,15 @@ export default function JoinLobbyPage() {
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
           />
           <p className="mt-2 text-sm text-gray-500">
-            Más adelante esta pantalla buscará la sala real en Supabase.
+            Debe coincidir con el código de una sala privada existente.
           </p>
         </div>
+
+        {serverError && (
+          <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {serverError}
+          </p>
+        )}
 
         <div className="mt-8 flex gap-3">
           <button
@@ -42,9 +100,11 @@ export default function JoinLobbyPage() {
 
           <button
             type="button"
-            className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90"
+            onClick={handleJoinLobby}
+            disabled={loading}
+            className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
           >
-            Unirse
+            {loading ? "Buscando..." : "Unirse"}
           </button>
         </div>
       </div>

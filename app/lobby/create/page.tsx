@@ -64,6 +64,8 @@ export default function CreateLobbyPage() {
     );
 
     setLoading(false);
+
+    router.push(`/lobby/${data.id}`);
   };
 
   return (
