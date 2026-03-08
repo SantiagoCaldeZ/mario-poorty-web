@@ -1,0 +1,13 @@
+create table public.match_players (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null references public.matches(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  character_name text null,
+  turn_order integer not null,
+  board_position integer not null default 0,
+  is_finished boolean not null default false,
+  joined_at timestamptz not null default now(),
+  unique (match_id, user_id),
+  unique (match_id, turn_order),
+  unique (match_id, character_name)
+);
