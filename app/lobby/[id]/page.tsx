@@ -36,17 +36,22 @@ export default function LobbyDetailPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadLobby = async () => {
-      setServerError("");
-      setLoading(true);
+    const lobbyId = params.id;
 
-      const lobbyId = params.id;
+    if (!lobbyId || typeof lobbyId !== "string") {
+      setServerError("ID de sala inválido.");
+      setLoading(false);
+      return;
+    }
 
-      if (!lobbyId || typeof lobbyId !== "string") {
-        setServerError("ID de sala inválido.");
-        setLoading(false);
-        return;
+    let isMounted = true;
+
+    const loadLobby = async (showLoading = false) => {
+      if (showLoading && isMounted) {
+        setLoading(true);
       }
+
+      setServerError("");
 
       const {
         data: { session },
@@ -58,9 +63,11 @@ export default function LobbyDetailPage() {
       }
 
       const userId = session.user.id;
-      setCurrentUserId(userId);
 
-      // Verificar que el usuario pertenezca a esta sala
+      if (isMounted) {
+        setCurrentUserId(userId);
+      }
+
       const { data: membership, error: membershipError } = await supabase
         .from("lobby_players")
         .select("id, is_host")
@@ -69,14 +76,15 @@ export default function LobbyDetailPage() {
         .maybeSingle();
 
       if (membershipError) {
-        setServerError("No se pudo validar tu acceso a esta sala.");
-        setLoading(false);
+        if (isMounted) {
+          setServerError("No se pudo validar tu acceso a esta sala.");
+          setLoading(false);
+        }
         return;
       }
 
       if (!membership) {
-        setServerError("No perteneces a esta sala.");
-        setLoading(false);
+        router.replace("/home");
         return;
       }
 
@@ -87,14 +95,18 @@ export default function LobbyDetailPage() {
         .maybeSingle();
 
       if (lobbyError) {
-        setServerError(lobbyError.message);
-        setLoading(false);
+        if (isMounted) {
+          setServerError(lobbyError.message);
+          setLoading(false);
+        }
         return;
       }
 
       if (!lobbyData) {
-        setServerError("La sala no existe.");
-        setLoading(false);
+        if (isMounted) {
+          setServerError("La sala no existe.");
+          setLoading(false);
+        }
         return;
       }
 
@@ -105,18 +117,61 @@ export default function LobbyDetailPage() {
         .order("joined_at", { ascending: true });
 
       if (playerError) {
-        setServerError(playerError.message);
-        setLoading(false);
+        if (isMounted) {
+          setServerError(playerError.message);
+          setLoading(false);
+        }
         return;
       }
 
-      setLobby(lobbyData);
-      setPlayers((playerData ?? []) as LobbyPlayerRow[]);
-      setLoading(false);
+      if (isMounted) {
+        setLobby(lobbyData);
+        setPlayers((playerData ?? []) as LobbyPlayerRow[]);
+        setLoading(false);
+      }
     };
 
-    loadLobby();
+    loadLobby(true);
+
+    const channel = supabase
+      .channel(`lobby-detail-${lobbyId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lobbies",
+          filter: `id=eq.${lobbyId}`,
+        },
+        async () => {
+          await loadLobby(false);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lobby_players",
+          filter: `lobby_id=eq.${lobbyId}`,
+        },
+        async () => {
+          await loadLobby(false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
   }, [params.id, router]);
+
+  useEffect(() => {
+    if (lobby?.status === "in_game" && lobby.id) {
+      router.replace(`/game/${lobby.id}`);
+    }
+  }, [lobby?.status, lobby?.id, router]);
 
   const currentPlayer = players.find((player) => player.user_id === currentUserId);
   const isHost = currentPlayer?.is_host ?? false;
@@ -140,6 +195,48 @@ export default function LobbyDetailPage() {
     }
 
     router.push("/home");
+  };
+
+  const handleStartGame = async () => {
+    if (!lobby) return;
+
+    setServerError("");
+
+    if (!isHost) {
+      setServerError("Solo el host puede iniciar la partida.");
+      return;
+    }
+
+    if (lobby.status !== "waiting") {
+      setServerError("La partida ya no está en estado de espera.");
+      return;
+    }
+
+    if (players.length < 2) {
+      setServerError("Se necesitan al menos 2 jugadores para iniciar la partida.");
+      return;
+    }
+
+    if (players.length > 6) {
+      setServerError("La sala supera el máximo permitido de 6 jugadores.");
+      return;
+    }
+
+    setActionLoading(true);
+
+    const { error } = await supabase
+      .from("lobbies")
+      .update({ status: "in_game" })
+      .eq("id", lobby.id)
+      .eq("host_id", currentUserId);
+
+    if (error) {
+      setServerError(error.message);
+      setActionLoading(false);
+      return;
+    }
+
+    setActionLoading(false);
   };
 
   const handleCloseLobby = async () => {
@@ -269,12 +366,16 @@ export default function LobbyDetailPage() {
             Volver
           </button>
 
-          <button
-            type="button"
-            className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90"
-          >
-            Iniciar partida
-          </button>
+          {isHost && lobby?.status === "waiting" && (
+            <button
+              type="button"
+              onClick={handleStartGame}
+              disabled={actionLoading}
+              className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
+            >
+              {actionLoading ? "Iniciando..." : "Iniciar partida"}
+            </button>
+          )}
 
           {isHost ? (
             <button

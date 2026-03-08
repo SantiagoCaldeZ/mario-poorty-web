@@ -93,21 +93,45 @@ export default function CreateLobbyPage() {
       return;
     }
 
-    const roomCode = matchType === "private" ? generateRoomCode() : null;
+    const maxAttempts = matchType === "private" ? 5 : 1;
+    let lobbyData: { id: string } | null = null;
+    let lobbyError: { message: string; code?: string } | null = null;
 
-    const { data: lobbyData, error: lobbyError } = await supabase
-      .from("lobbies")
-      .insert({
-        host_id: userId,
-        type: matchType,
-        room_code: roomCode,
-        status: "waiting",
-      })
-      .select()
-      .single();
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const roomCode = matchType === "private" ? generateRoomCode() : null;
+
+      const { data, error } = await supabase
+        .from("lobbies")
+        .insert({
+          host_id: userId,
+          type: matchType,
+          room_code: roomCode,
+          status: "waiting",
+        })
+        .select("id")
+        .single();
+
+      if (!error && data) {
+        lobbyData = data;
+        lobbyError = null;
+        break;
+      }
+
+      lobbyError = error;
+
+      const isUniqueViolation = error?.code === "23505";
+
+      if (!(matchType === "private" && isUniqueViolation)) {
+        break;
+      }
+    }
 
     if (lobbyError || !lobbyData) {
-      setServerError(lobbyError?.message ?? "No se pudo crear la sala.");
+      setServerError(
+        lobbyError?.code === "23505"
+          ? "No se pudo generar un código de sala único. Intenta nuevamente."
+          : lobbyError?.message ?? "No se pudo crear la sala."
+      );
       setLoading(false);
       return;
     }

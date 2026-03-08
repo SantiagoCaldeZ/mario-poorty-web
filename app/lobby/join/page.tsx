@@ -77,6 +77,36 @@ export default function JoinLobbyPage() {
     };
 
     initializePage();
+
+    const channel = supabase
+      .channel("public-lobbies-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lobbies",
+        },
+        async () => {
+          await loadPublicLobbies();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lobby_players",
+        },
+        async () => {
+          await loadPublicLobbies();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [router]);
 
   const handleJoinLobbyByCode = async () => {
@@ -150,28 +180,10 @@ export default function JoinLobbyPage() {
       return;
     }
 
-    const { data: currentPlayers, error: countError } = await supabase
-      .from("lobby_players")
-      .select("id")
-      .eq("lobby_id", lobbyData.id);
-
-    if (countError) {
-      setServerError("No se pudo validar la cantidad de jugadores.");
-      setLoading(false);
-      return;
-    }
-
-    if ((currentPlayers?.length ?? 0) >= 6) {
-      setServerError("La sala ya está llena.");
-      setLoading(false);
-      return;
-    }
-
-    const { error: joinError } = await supabase.from("lobby_players").insert({
-      lobby_id: lobbyData.id,
-      user_id: userId,
-      is_host: false,
-    });
+    const { data: joinedLobbyId, error: joinError } = await supabase.rpc(
+      "join_lobby_safely",
+      { target_lobby_id: lobbyData.id }
+    );
 
     if (joinError) {
       setServerError(joinError.message);
@@ -179,7 +191,7 @@ export default function JoinLobbyPage() {
       return;
     }
 
-    router.push(`/lobby/${lobbyData.id}`);
+    router.push(`/lobby/${joinedLobbyId}`);
   };
 
   const handleJoinPublicLobby = async (lobbyId: string) => {
@@ -251,28 +263,10 @@ export default function JoinLobbyPage() {
       return;
     }
 
-    const { data: currentPlayers, error: countError } = await supabase
-      .from("lobby_players")
-      .select("id")
-      .eq("lobby_id", lobbyData.id);
-
-    if (countError) {
-      setServerError("No se pudo validar la cantidad de jugadores.");
-      setLoading(false);
-      return;
-    }
-
-    if ((currentPlayers?.length ?? 0) >= 6) {
-      setServerError("La sala ya está llena.");
-      setLoading(false);
-      return;
-    }
-
-    const { error: joinError } = await supabase.from("lobby_players").insert({
-      lobby_id: lobbyData.id,
-      user_id: userId,
-      is_host: false,
-    });
+    const { data: joinedLobbyId, error: joinError } = await supabase.rpc(
+      "join_lobby_safely",
+      { target_lobby_id: lobbyData.id }
+    );
 
     if (joinError) {
       setServerError(joinError.message);
@@ -280,7 +274,7 @@ export default function JoinLobbyPage() {
       return;
     }
 
-    router.push(`/lobby/${lobbyData.id}`);
+    router.push(`/lobby/${joinedLobbyId}`);
   };
 
   if (pageLoading) {
