@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/lib/supabase";
 
 const registerSchema = z.object({
-  email: z.email("Ingresa un correo válido."),
+  email: z.string().email("Ingresa un correo válido."),
   username: z
     .string()
     .min(3, "El nombre de usuario debe tener al menos 3 caracteres.")

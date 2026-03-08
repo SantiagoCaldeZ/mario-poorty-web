@@ -1,6 +1,6 @@
 export type LobbyType = "public" | "private";
 
-export type LobbyStatus = "waiting" | "in_game" | "finished" | "cancelled";
+export type LobbyStatus = "waiting" | "in_game" | "finished" | "closed";
 
 export type MatchStatus = "active" | "finished" | "abandoned";
 

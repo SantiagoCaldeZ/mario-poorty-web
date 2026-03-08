@@ -248,7 +248,7 @@ export default function LobbyDetailPage() {
                   </p>
                   <p>
                     <span className="font-semibold">Correo:</span>{" "}
-                    {player.profiles?.[0]?.username ?? "Sin username"}
+                    {player.profiles?.[0]?.email ?? "Sin correo"}
                   </p>
                   <p>
                     <span className="font-semibold">Rol:</span>{" "}
