@@ -30,12 +30,20 @@ type MatchPlayerRow = {
   }[];
 };
 
+type PlayTurnResult = {
+  rolled_value: number;
+  updated_position: number;
+  next_turn_user_id: string;
+  updated_turn_number: number;
+};
+
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [serverError, setServerError] = useState("");
+  const [turnMessage, setTurnMessage] = useState("");
   const [match, setMatch] = useState<MatchData | null>(null);
   const [players, setPlayers] = useState<MatchPlayerRow[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -232,6 +240,33 @@ export default function GamePage() {
   const currentTurnPlayer = players.find(
     (player) => player.user_id === match?.current_turn_user_id
   );
+  const isMyTurn = currentUserId === match?.current_turn_user_id;
+  const currentMatchId = match?.id ?? null;
+
+  const handlePlayTurn = async () => {
+    if (!currentMatchId) return;
+
+    setServerError("");
+    setTurnMessage("");
+
+    const { data, error } = await supabase.rpc("play_turn", {
+      target_match_id: currentMatchId,
+    });
+
+    if (error) {
+      setServerError(error.message);
+      return;
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+
+    if (result) {
+      const turnResult = result as PlayTurnResult;
+      setTurnMessage(
+        `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.`
+      );
+    }
+  };
 
   if (loading) {
     return (
@@ -350,11 +385,17 @@ export default function GamePage() {
           )}
         </div>
 
+        {turnMessage && (
+          <p className="mt-6 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+            {turnMessage}
+          </p>
+        )}
+
         <div className="mt-8 rounded-xl border border-dashed border-gray-300 p-6">
           <h2 className="text-xl font-semibold text-gray-900">Próximo paso</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Aquí es donde después van a colocar el tablero, el turno actual, los dados,
-            las fichas y las casillas especiales.
+            Aquí es donde después van a colocar el tablero, el turno actual, los
+            dados, las fichas y las casillas especiales.
           </p>
         </div>
 
@@ -367,10 +408,20 @@ export default function GamePage() {
             Volver al inicio
           </button>
 
+          {isMyTurn && (
+            <button
+              type="button"
+              onClick={handlePlayTurn}
+              className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90"
+            >
+              Lanzar dado
+            </button>
+          )}
+
           {isHost && (
             <button
               type="button"
-              className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90"
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
             >
               Preparar tablero
             </button>
