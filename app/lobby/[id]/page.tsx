@@ -219,7 +219,7 @@ export default function LobbyDetailPage() {
       return;
     }
 
-    setActionLoading(false);
+    router.replace(`/game/${lobby.id}`);
   };
 
   const handleCloseLobby = async () => {
