@@ -21,7 +21,7 @@ type LobbyPlayerRow = {
   profiles: {
     username: string;
     email: string;
-  } | null;
+  }[];
 };
 
 export default function LobbyDetailPage() {
@@ -244,11 +244,11 @@ export default function LobbyDetailPage() {
                 >
                   <p>
                     <span className="font-semibold">Usuario:</span>{" "}
-                    {player.profiles?.username ?? "Sin username"}
+                    {player.profiles?.[0]?.username ?? "Sin username"}
                   </p>
                   <p>
                     <span className="font-semibold">Correo:</span>{" "}
-                    {player.profiles?.email ?? "Sin email"}
+                    {player.profiles?.[0]?.username ?? "Sin username"}
                   </p>
                   <p>
                     <span className="font-semibold">Rol:</span>{" "}

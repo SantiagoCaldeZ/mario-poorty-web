@@ -10,6 +10,10 @@ type PublicLobbyRow = {
   status: "waiting" | "in_game" | "finished" | "closed";
   created_at: string;
   host_id: string;
+  profiles: {
+    username: string;
+    email: string;
+  }[];
   lobby_players: { id: string }[];
 };
 
@@ -23,11 +27,11 @@ export default function JoinLobbyPage() {
 
   const loadPublicLobbies = async () => {
     const { data: lobbyData, error: lobbyError } = await supabase
-      .from("lobbies")
-      .select("id, room_code, status, created_at, host_id, lobby_players(id)")
-      .eq("type", "public")
-      .eq("status", "waiting")
-      .order("created_at", { ascending: false });
+    .from("lobbies")
+    .select("id, room_code, status, created_at, host_id, profiles(username, email), lobby_players(id)")
+    .eq("type", "public")
+    .eq("status", "waiting")
+    .order("created_at", { ascending: false });
 
     if (lobbyError) {
       setServerError("No se pudieron cargar las partidas públicas.");
@@ -346,6 +350,10 @@ export default function JoinLobbyPage() {
                       <span className="font-semibold">ID:</span> {lobby.id}
                     </p>
                     <p>
+                      <span className="font-semibold">Host:</span>{" "}
+                      {lobby.profiles?.[0]?.username ?? "Sin username"}
+                    </p>
+                    <p>
                       <span className="font-semibold">Estado:</span> {lobby.status}
                     </p>
                     <p>
@@ -354,7 +362,7 @@ export default function JoinLobbyPage() {
                     </p>
                     <p>
                       <span className="font-semibold">Jugadores:</span>{" "}
-                      {lobby.lobby_players?.length ?? 0}
+                      {lobby.lobby_players?.length ?? 0}/6
                     </p>
                   </div>
 
