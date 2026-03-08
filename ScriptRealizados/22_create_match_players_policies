@@ -1,0 +1,12 @@
+create policy "Authenticated users can view match players of their matches"
+on public.match_players
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.match_players mp
+    where mp.match_id = match_players.match_id
+      and mp.user_id = auth.uid()
+  )
+);
