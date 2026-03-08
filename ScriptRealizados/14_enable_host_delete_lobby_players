@@ -1,0 +1,12 @@
+create policy "Hosts can delete players from their own lobby"
+on public.lobby_players
+for delete
+to authenticated
+using (
+  exists (
+    select 1
+    from public.lobbies
+    where lobbies.id = lobby_players.lobby_id
+      and lobbies.host_id = auth.uid()
+  )
+);
