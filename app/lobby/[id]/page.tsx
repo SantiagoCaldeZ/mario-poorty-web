@@ -149,29 +149,29 @@ export default function LobbyDetailPage() {
     setActionLoading(true);
 
     const { error: lobbyError } = await supabase
-        .from("lobbies")
-        .update({ status: "closed" })
-        .eq("id", lobby.id);
+      .from("lobbies")
+      .update({ status: "closed" })
+      .eq("id", lobby.id);
 
     if (lobbyError) {
-        setServerError(lobbyError.message);
-        setActionLoading(false);
-        return;
+      setServerError(lobbyError.message);
+      setActionLoading(false);
+      return;
     }
 
     const { error: playersError } = await supabase
-        .from("lobby_players")
-        .delete()
-        .eq("lobby_id", lobby.id);
+      .from("lobby_players")
+      .delete()
+      .eq("lobby_id", lobby.id);
 
     if (playersError) {
-        setServerError(playersError.message);
-        setActionLoading(false);
-        return;
+      setServerError(playersError.message);
+      setActionLoading(false);
+      return;
     }
 
     router.push("/home");
-    };
+  };
 
   if (loading) {
     return (
