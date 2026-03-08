@@ -1,0 +1,10 @@
+create table public.matches (
+  id uuid primary key default gen_random_uuid(),
+  lobby_id uuid not null unique references public.lobbies(id) on delete cascade,
+  status text not null check (status in ('active', 'finished', 'abandoned')),
+  current_turn_user_id uuid null references public.profiles(id) on delete set null,
+  turn_number integer not null default 1,
+  winner_user_id uuid null references public.profiles(id) on delete set null,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz null
+);
