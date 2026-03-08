@@ -1,0 +1,61 @@
+create or replace function public.join_lobby_safely(
+  target_lobby_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  current_lobby_status text;
+  current_lobby_type text;
+  current_player_count integer;
+  existing_membership uuid;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para unirte a una sala.';
+  end if;
+
+  select lp.lobby_id
+  into existing_membership
+  from public.lobby_players lp
+  join public.lobbies l on l.id = lp.lobby_id
+  where lp.user_id = current_user_id
+    and l.status in ('waiting', 'in_game')
+  limit 1;
+
+  if existing_membership is not null then
+    raise exception 'Ya perteneces a una sala activa. Debes salir de ella primero.';
+  end if;
+
+  select l.status, l.type
+  into current_lobby_status, current_lobby_type
+  from public.lobbies l
+  where l.id = target_lobby_id;
+
+  if not found then
+    raise exception 'La sala seleccionada no existe.';
+  end if;
+
+  if current_lobby_status <> 'waiting' then
+    raise exception 'La sala ya no está disponible para unirse.';
+  end if;
+
+  select count(*)
+  into current_player_count
+  from public.lobby_players
+  where lobby_id = target_lobby_id;
+
+  if current_player_count >= 6 then
+    raise exception 'La sala ya está llena.';
+  end if;
+
+  insert into public.lobby_players (lobby_id, user_id, is_host)
+  values (target_lobby_id, current_user_id, false);
+
+  return target_lobby_id;
+end;
+$$;
