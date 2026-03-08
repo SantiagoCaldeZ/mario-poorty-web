@@ -1,0 +1,17 @@
+drop policy if exists "Authenticated users can view match players of their matches"
+on public.match_players;
+
+create policy "Authenticated users can view match players of their matches"
+on public.match_players
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.matches m
+    join public.lobby_players lp
+      on lp.lobby_id = m.lobby_id
+    where m.id = match_players.match_id
+      and lp.user_id = auth.uid()
+  )
+);
