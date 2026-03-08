@@ -1,0 +1,2 @@
+alter table public.lobbies
+add constraint lobbies_room_code_unique unique (room_code);
