@@ -207,28 +207,11 @@ export default function LobbyDetailPage() {
       return;
     }
 
-    if (lobby.status !== "waiting") {
-      setServerError("La partida ya no está en estado de espera.");
-      return;
-    }
-
-    if (players.length < 2) {
-      setServerError("Se necesitan al menos 2 jugadores para iniciar la partida.");
-      return;
-    }
-
-    if (players.length > 6) {
-      setServerError("La sala supera el máximo permitido de 6 jugadores.");
-      return;
-    }
-
     setActionLoading(true);
 
-    const { error } = await supabase
-      .from("lobbies")
-      .update({ status: "in_game" })
-      .eq("id", lobby.id)
-      .eq("host_id", currentUserId);
+    const { error } = await supabase.rpc("start_match_from_lobby", {
+      target_lobby_id: lobby.id,
+    });
 
     if (error) {
       setServerError(error.message);
