@@ -33,8 +33,9 @@ type MatchPlayerRow = {
 type PlayTurnResult = {
   rolled_value: number;
   updated_position: number;
-  next_turn_user_id: string;
+  next_turn_user_id: string | null;
   updated_turn_number: number;
+  match_finished: boolean;
 };
 
 export default function GamePage() {
@@ -262,9 +263,16 @@ export default function GamePage() {
 
     if (result) {
       const turnResult = result as PlayTurnResult;
-      setTurnMessage(
-        `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.`
-      );
+
+      if (turnResult.match_finished) {
+        setTurnMessage(
+          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!`
+        );
+      } else {
+        setTurnMessage(
+          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.`
+        );
+      }
     }
   };
 
