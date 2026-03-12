@@ -1,0 +1,55 @@
+alter table public.matches
+add column if not exists phase text;
+
+alter table public.matches
+add column if not exists order_target_number integer;
+
+update public.matches
+set phase = case
+  when status = 'active' then 'active'
+  when status = 'finished' then 'finished'
+  when status = 'abandoned' then 'abandoned'
+  else 'active'
+end
+where phase is null;
+
+alter table public.matches
+alter column phase set default 'choosing_order';
+
+alter table public.matches
+alter column phase set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'matches_phase_check'
+  ) then
+    alter table public.matches
+    add constraint matches_phase_check
+    check (phase in ('choosing_order', 'active', 'finished', 'abandoned'));
+  end if;
+end $$;
+
+alter table public.match_players
+add column if not exists selected_order_number integer;
+
+alter table public.match_players
+add column if not exists order_number_submitted_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'match_players_selected_order_number_check'
+  ) then
+    alter table public.match_players
+    add constraint match_players_selected_order_number_check
+    check (
+      selected_order_number is null
+      or (selected_order_number >= 1 and selected_order_number <= 1000)
+    );
+  end if;
+end $$;
