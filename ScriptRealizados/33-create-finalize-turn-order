@@ -1,0 +1,109 @@
+drop function if exists public.finalize_turn_order(uuid);
+
+create or replace function public.finalize_turn_order(
+  target_match_id uuid
+)
+returns table (
+  target_number integer,
+  first_turn_user_id uuid
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  match_phase text;
+  final_number integer;
+  first_user uuid;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para finalizar el orden.';
+  end if;
+
+  perform 1
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.user_id = current_user_id;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  select m.phase
+  into match_phase
+  from public.matches m
+  where m.id = target_match_id
+  for update;
+
+  if not found then
+    raise exception 'La partida no existe.';
+  end if;
+
+  if match_phase = 'active' then
+    return query
+    select
+      m.order_target_number,
+      m.current_turn_user_id
+    from public.matches m
+    where m.id = target_match_id;
+
+    return;
+  end if;
+
+  if match_phase <> 'choosing_order' then
+    raise exception 'La partida no está en fase de selección de orden.';
+  end if;
+
+  update public.match_players
+  set
+    selected_order_number = floor(random() * 1000 + 1)::int,
+    order_number_submitted_at = coalesce(order_number_submitted_at, now())
+  where match_id = target_match_id
+    and selected_order_number is null;
+
+  final_number := floor(random() * 1000 + 1)::int;
+
+  with ranked as (
+    select
+      mp.id,
+      row_number() over (
+        order by
+          abs(mp.selected_order_number - final_number),
+          mp.selected_order_number,
+          mp.joined_at,
+          mp.user_id
+      ) as new_turn_order
+    from public.match_players mp
+    where mp.match_id = target_match_id
+  )
+  update public.match_players mp
+  set turn_order = ranked.new_turn_order
+  from ranked
+  where mp.id = ranked.id;
+
+  select mp.user_id
+  into first_user
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.turn_order = 1;
+
+  update public.matches
+  set
+    phase = 'active',
+    status = 'active',
+    order_target_number = final_number,
+    current_turn_user_id = first_user,
+    turn_number = 1
+  where id = target_match_id;
+
+  return query
+  select
+    final_number,
+    first_user;
+end;
+$$;
+
+grant execute on function public.finalize_turn_order(uuid) to authenticated;
