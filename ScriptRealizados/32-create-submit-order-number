@@ -1,0 +1,82 @@
+drop function if exists public.submit_order_number(uuid, integer);
+
+create or replace function public.submit_order_number(
+  target_match_id uuid,
+  chosen_number integer
+)
+returns table (
+  submitted_number integer,
+  submitted_players integer,
+  total_players integer,
+  all_submitted boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  match_phase text;
+  submitted_count integer;
+  total_count integer;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para escoger tu número.';
+  end if;
+
+  if chosen_number < 1 or chosen_number > 1000 then
+    raise exception 'El número debe estar entre 1 y 1000.';
+  end if;
+
+  select m.phase
+  into match_phase
+  from public.matches m
+  where m.id = target_match_id;
+
+  if not found then
+    raise exception 'La partida no existe.';
+  end if;
+
+  if match_phase <> 'choosing_order' then
+    raise exception 'La partida no está en fase de selección de orden.';
+  end if;
+
+  perform 1
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.user_id = current_user_id;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  update public.match_players
+  set
+    selected_order_number = chosen_number,
+    order_number_submitted_at = now()
+  where match_id = target_match_id
+    and user_id = current_user_id;
+
+  select count(*)
+  into total_count
+  from public.match_players
+  where match_id = target_match_id;
+
+  select count(*)
+  into submitted_count
+  from public.match_players
+  where match_id = target_match_id
+    and selected_order_number is not null;
+
+  return query
+  select
+    chosen_number,
+    submitted_count,
+    total_count,
+    submitted_count = total_count;
+end;
+$$;
+
+grant execute on function public.submit_order_number(uuid, integer) to authenticated;
