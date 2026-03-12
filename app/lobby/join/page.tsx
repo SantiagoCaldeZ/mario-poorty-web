@@ -10,10 +10,8 @@ type PublicLobbyRow = {
   status: "waiting" | "in_game" | "finished" | "closed";
   created_at: string;
   host_id: string;
-  profiles: {
-    username: string;
-    email: string;
-  }[];
+  host_username: string | null;
+  host_email: string | null;
   lobby_players: { id: string }[];
 };
 
@@ -27,18 +25,49 @@ export default function JoinLobbyPage() {
 
   const loadPublicLobbies = async () => {
     const { data: lobbyData, error: lobbyError } = await supabase
-    .from("lobbies")
-    .select("id, room_code, status, created_at, host_id, profiles(username, email), lobby_players(id)")
-    .eq("type", "public")
-    .eq("status", "waiting")
-    .order("created_at", { ascending: false });
+      .from("lobbies")
+      .select("id, room_code, status, created_at, host_id, lobby_players(id)")
+      .eq("type", "public")
+      .eq("status", "waiting")
+      .order("created_at", { ascending: false });
 
     if (lobbyError) {
       setServerError("No se pudieron cargar las partidas públicas.");
       return;
     }
 
-    setPublicLobbies((lobbyData ?? []) as PublicLobbyRow[]);
+    const hostIds = (lobbyData ?? []).map((lobby) => lobby.host_id);
+
+    const { data: profileData, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, username, email")
+      .in("id", hostIds);
+
+    if (profileError) {
+      setServerError("No se pudieron cargar los perfiles de los hosts.");
+      return;
+    }
+
+    const profilesMap = new Map(
+      (profileData ?? []).map((profile) => [profile.id, profile])
+    );
+
+    const mergedLobbies: PublicLobbyRow[] = (lobbyData ?? []).map((lobby) => {
+      const hostProfile = profilesMap.get(lobby.host_id);
+
+      return {
+        id: lobby.id,
+        room_code: lobby.room_code,
+        status: lobby.status,
+        created_at: lobby.created_at,
+        host_id: lobby.host_id,
+        host_username: hostProfile?.username ?? null,
+        host_email: hostProfile?.email ?? null,
+        lobby_players: lobby.lobby_players ?? [],
+      };
+    });
+
+    setPublicLobbies(mergedLobbies);
   };
 
   useEffect(() => {
@@ -345,7 +374,7 @@ export default function JoinLobbyPage() {
                     </p>
                     <p>
                       <span className="font-semibold">Host:</span>{" "}
-                      {lobby.profiles?.[0]?.username ?? "Sin username"}
+                      {lobby.host_username ?? "Sin username"}
                     </p>
                     <p>
                       <span className="font-semibold">Estado:</span> {lobby.status}

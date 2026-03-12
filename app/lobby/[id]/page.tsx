@@ -18,10 +18,8 @@ type LobbyPlayerRow = {
   user_id: string;
   is_host: boolean;
   joined_at: string;
-  profiles: {
-    username: string;
-    email: string;
-  }[];
+  username: string | null;
+  email: string | null;
 };
 
 export default function LobbyDetailPage() {
@@ -112,7 +110,7 @@ export default function LobbyDetailPage() {
 
       const { data: playerData, error: playerError } = await supabase
         .from("lobby_players")
-        .select("id, user_id, is_host, joined_at, profiles(username, email)")
+        .select("id, user_id, is_host, joined_at")
         .eq("lobby_id", lobbyId)
         .order("joined_at", { ascending: true });
 
@@ -124,9 +122,41 @@ export default function LobbyDetailPage() {
         return;
       }
 
+      const userIds = (playerData ?? []).map((player) => player.user_id);
+
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, email")
+        .in("id", userIds);
+
+      if (profileError) {
+        if (isMounted) {
+          setServerError(profileError.message);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const profilesMap = new Map(
+        (profileData ?? []).map((profile) => [profile.id, profile])
+      );
+
+      const mergedPlayers: LobbyPlayerRow[] = (playerData ?? []).map((player) => {
+        const profile = profilesMap.get(player.user_id);
+
+        return {
+          id: player.id,
+          user_id: player.user_id,
+          is_host: player.is_host,
+          joined_at: player.joined_at,
+          username: profile?.username ?? null,
+          email: profile?.email ?? null,
+        };
+      });
+
       if (isMounted) {
         setLobby(lobbyData);
-        setPlayers((playerData ?? []) as LobbyPlayerRow[]);
+        setPlayers(mergedPlayers);
         setLoading(false);
       }
     };
@@ -324,11 +354,11 @@ export default function LobbyDetailPage() {
                 >
                   <p>
                     <span className="font-semibold">Usuario:</span>{" "}
-                    {player.profiles?.[0]?.username ?? "Sin username"}
+                    {player.username ?? "Sin username"}
                   </p>
                   <p>
                     <span className="font-semibold">Correo:</span>{" "}
-                    {player.profiles?.[0]?.email ?? "Sin correo"}
+                    {player.email ?? "Sin correo"}
                   </p>
                   <p>
                     <span className="font-semibold">Rol:</span>{" "}

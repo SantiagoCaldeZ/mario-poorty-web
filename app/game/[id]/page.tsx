@@ -24,10 +24,8 @@ type MatchPlayerRow = {
   board_position: number;
   is_finished: boolean;
   joined_at: string;
-  profiles: {
-    username: string;
-    email: string;
-  }[];
+  username: string | null;
+  email: string | null;
 };
 
 type PlayTurnResult = {
@@ -164,7 +162,7 @@ export default function GamePage() {
       const { data: playerData, error: playerError } = await supabase
         .from("match_players")
         .select(
-          "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at, profiles(username, email)"
+          "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at"
         )
         .eq("match_id", matchData.id)
         .order("turn_order", { ascending: true });
@@ -177,9 +175,45 @@ export default function GamePage() {
         return;
       }
 
+      const userIds = (playerData ?? []).map((player) => player.user_id);
+
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, email")
+        .in("id", userIds);
+
+      if (profileError) {
+        if (isMounted) {
+          setServerError(profileError.message);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const profilesMap = new Map(
+        (profileData ?? []).map((profile) => [profile.id, profile])
+      );
+
+      const mergedPlayers: MatchPlayerRow[] = (playerData ?? []).map((player) => {
+        const profile = profilesMap.get(player.user_id);
+
+        return {
+          id: player.id,
+          match_id: player.match_id,
+          user_id: player.user_id,
+          character_name: player.character_name,
+          turn_order: player.turn_order,
+          board_position: player.board_position,
+          is_finished: player.is_finished,
+          joined_at: player.joined_at,
+          username: profile?.username ?? null,
+          email: profile?.email ?? null,
+        };
+      });
+
       if (isMounted) {
         setMatch(matchData);
-        setPlayers((playerData ?? []) as MatchPlayerRow[]);
+        setPlayers(mergedPlayers);
         setLoading(false);
       }
     };
@@ -334,13 +368,13 @@ export default function GamePage() {
               <span className="font-semibold">Turno actual:</span>{" "}
               {match.status === "finished"
                 ? "Partida terminada"
-                : currentTurnPlayer?.profiles?.[0]?.username ?? "No definido"}
+                : currentTurnPlayer?.username ?? "No definido"}
             </p>
 
             {match.status === "finished" && (
               <p className="text-sm text-gray-700 sm:col-span-2">
                 <span className="font-semibold">Ganador:</span>{" "}
-                {winnerPlayer?.profiles?.[0]?.username ?? "Jugador ganador"}
+                {winnerPlayer?.username ?? "Jugador ganador"}
               </p>
             )}
           </div>
@@ -366,12 +400,12 @@ export default function GamePage() {
                   >
                     <p>
                       <span className="font-semibold">Usuario:</span>{" "}
-                      {player.profiles?.[0]?.username ?? "Sin username"}
+                      {player.username ?? "Sin username"}
                       {isCurrentUser ? " (Tú)" : ""}
                     </p>
                     <p>
                       <span className="font-semibold">Correo:</span>{" "}
-                      {player.profiles?.[0]?.email ?? "Sin correo"}
+                      {player.email ?? "Sin correo"}
                     </p>
                     <p>
                       <span className="font-semibold">Orden de turno:</span>{" "}
