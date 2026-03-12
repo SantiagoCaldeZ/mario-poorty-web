@@ -22,6 +22,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [serverError, setServerError] = useState<string>("");
   const [serverSuccess, setServerSuccess] = useState<string>("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -67,8 +68,8 @@ export default function LoginPage() {
     }
 
     const { data: signInData, error } = await supabase.auth.signInWithPassword({
-        email: emailToUse,
-        password,
+      email: emailToUse,
+      password,
     });
 
     console.log("emailToUse:", emailToUse);
@@ -76,8 +77,8 @@ export default function LoginPage() {
     console.log("signInError:", error);
 
     if (error) {
-        setServerError(error.message);
-        return;
+      setServerError(error.message);
+      return;
     }
 
     router.push("/home");
@@ -113,12 +114,55 @@ export default function LoginPage() {
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Contraseña
             </label>
-            <input
-              type="password"
-              placeholder="********"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-              {...register("password")}
-            />
+
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="********"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-12 outline-none focus:border-black"
+                {...register("password")}
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+                aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+              >
+                {showPassword ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C7 20 2.73 16.89 1 12c.73-2.06 1.94-3.93 3.5-5.44" />
+                    <path d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58" />
+                    <path d="M9.88 4.24A10.94 10.94 0 0 1 12 4c5 0 9.27 3.11 11 8a11.83 11.83 0 0 1-4.24 5.18" />
+                    <path d="M1 1l22 22" />
+                  </svg>
+                )}
+              </button>
+            </div>
+
             {errors.password && (
               <p className="mt-1 text-sm text-red-600">
                 {errors.password.message}
