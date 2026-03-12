@@ -7,18 +7,20 @@ import GameBoard from "@/components/game/GameBoard";
 import GameSidebar from "@/components/game/GameSidebar";
 import MatchSummary from "@/components/game/MatchSummary";
 import PlayersPanel from "@/components/game/PlayersPanel";
+import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
 
 type MatchData = {
   id: string;
   lobby_id: string;
   status: "active" | "finished" | "abandoned";
-  phase: "choosing_order" | "active" | "finished" | "abandoned";
+  phase: "choosing_order" | "choosing_character" | "active" | "finished" | "abandoned";
   order_target_number: number | null;
   current_turn_user_id: string | null;
   turn_number: number;
   winner_user_id: string | null;
   started_at: string;
   finished_at: string | null;
+  current_character_turn_order: number | null;
 };
 
 type MatchPlayerRow = {
@@ -56,6 +58,8 @@ export default function GamePage() {
   const [selectedOrderNumber, setSelectedOrderNumber] = useState("");
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderFinalizing, setOrderFinalizing] = useState(false);
+  const [selectionSubmitting, setSelectionSubmitting] = useState(false);
+  const [selectingCharacter, setSelectingCharacter] = useState<string | null>(null);
 
   useEffect(() => {
     const lobbyId = params.id;
@@ -94,7 +98,7 @@ export default function GamePage() {
       const { data: matchData, error: matchError } = await supabase
         .from("matches")
         .select(
-          "id, lobby_id, status, phase, order_target_number, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
+          "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
         )
         .eq("lobby_id", lobbyId)
         .maybeSingle();
@@ -325,7 +329,7 @@ export default function GamePage() {
     const { data: updatedMatch, error: updatedMatchError } = await supabase
       .from("matches")
       .select(
-      "id, lobby_id, status, phase, order_target_number, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
+      "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
     )
       .eq("id", currentMatchId)
       .maybeSingle();
@@ -439,6 +443,29 @@ export default function GamePage() {
     window.location.reload();
   };
 
+  const handleSelectCharacter = async (characterName: string) => {
+    if (!match?.id) return;
+
+    setServerError("");
+    setSelectionSubmitting(true);
+    setSelectingCharacter(characterName);
+
+    const { error } = await supabase.rpc("select_character", {
+      target_match_id: match.id,
+      chosen_character: characterName,
+    });
+
+    setSelectionSubmitting(false);
+    setSelectingCharacter(null);
+
+    if (error) {
+      setServerError(error.message);
+      return;
+    }
+
+    window.location.reload();
+  };
+
   const submittedPlayersCount = players.filter(
     (player) => player.selected_order_number !== null
   ).length;
@@ -450,27 +477,6 @@ export default function GamePage() {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
         <p className="text-gray-700">Cargando partida...</p>
-      </main>
-    );
-  }
-
-  if (serverError) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-        <div className="w-full max-w-xl rounded-2xl bg-white p-8 shadow-md">
-          <h1 className="text-2xl font-bold text-gray-900">Partida</h1>
-          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-            {serverError}
-          </p>
-
-          <button
-            type="button"
-            onClick={() => router.push("/home")}
-            className="mt-6 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
-          >
-            Volver al inicio
-          </button>
-        </div>
       </main>
     );
   }
@@ -585,6 +591,43 @@ export default function GamePage() {
               {orderFinalizing ? "Definiendo orden..." : "Definir orden y continuar"}
             </button>
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (match?.phase === "choosing_character") {
+    return (
+      <CharacterSelectionScreen
+        players={players}
+        currentUserId={currentUserId}
+        currentCharacterTurnOrder={match.current_character_turn_order}
+        orderTargetNumber={match.order_target_number}
+        selectingCharacter={selectingCharacter}
+        onSelectCharacter={handleSelectCharacter}
+        onGoHome={() => router.push("/home")}
+        selectionSubmitting={selectionSubmitting}
+        serverError={serverError}
+      />
+    );
+  }
+
+  if (serverError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+        <div className="w-full max-w-xl rounded-2xl bg-white p-8 shadow-md">
+          <h1 className="text-2xl font-bold text-gray-900">Partida</h1>
+          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {serverError}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => router.push("/home")}
+            className="mt-6 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
+          >
+            Volver al inicio
+          </button>
         </div>
       </main>
     );
