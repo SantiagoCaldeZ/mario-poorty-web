@@ -435,7 +435,7 @@ export default function GamePage() {
               Lanzar dado
             </button>
           )}
-
+          
           {isHost && (
             <button
               type="button"
