@@ -1,3 +1,8 @@
+"use client";
+
+import Image from "next/image";
+import { CHARACTER_OPTIONS } from "@/lib/characters";
+
 type MatchPlayerRow = {
   id: string;
   match_id: string;
@@ -25,19 +30,6 @@ type CharacterSelectionScreenProps = {
   serverError: string;
 };
 
-const AVAILABLE_CHARACTERS = [
-  "Mario",
-  "Luigi",
-  "Peach",
-  "Daisy",
-  "Yoshi",
-  "Toad",
-  "Wario",
-  "Waluigi",
-  "Bowser",
-  "Toadette",
-];
-
 export default function CharacterSelectionScreen({
   players,
   currentUserId,
@@ -49,6 +41,7 @@ export default function CharacterSelectionScreen({
   selectionSubmitting,
   serverError,
 }: CharacterSelectionScreenProps) {
+
   const currentPicker = players.find(
     (player) => player.turn_order === currentCharacterTurnOrder
   );
@@ -64,9 +57,17 @@ export default function CharacterSelectionScreen({
       .filter((character): character is string => character !== null)
   );
 
+  const playHoverSound = () => {
+    if (!isMyTurnToPick) return;
+
+    const audio = new Audio("/sounds/seleccion.wav");
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
+  };
+
   return (
     <main className="min-h-screen bg-gray-100 px-4 py-10">
-      <div className="mx-auto max-w-5xl rounded-2xl bg-white p-8 shadow-md">
+      <div className="mx-auto max-w-6xl rounded-2xl bg-white p-8 shadow-md">
         <h1 className="text-3xl font-bold text-gray-900">Selección de personajes</h1>
         <p className="mt-2 text-gray-600">
           Los personajes se escogen según el orden definido anteriormente. Cada
@@ -118,33 +119,44 @@ export default function CharacterSelectionScreen({
         <div className="mt-6 rounded-xl border border-gray-200 p-5">
           <h2 className="text-xl font-semibold text-gray-900">Personajes disponibles</h2>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {AVAILABLE_CHARACTERS.map((character) => {
-              const isTaken = takenCharacters.has(character);
-              const isSelectingThisCharacter = selectingCharacter === character;
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {CHARACTER_OPTIONS.map((character) => {
+              const isTaken = takenCharacters.has(character.name);
+              const isSelectingThisCharacter = selectingCharacter === character.name;
 
               return (
                 <button
-                  key={character}
+                  key={character.name}
                   type="button"
-                  onClick={() => onSelectCharacter(character)}
+                  onMouseEnter={playHoverSound}
+                  onClick={() => onSelectCharacter(character.name)}
                   disabled={!isMyTurnToPick || isTaken || selectionSubmitting}
                   className={`rounded-xl border p-4 text-left transition ${
                     isTaken
                       ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
                       : isMyTurnToPick
-                      ? "border-gray-300 bg-white text-gray-900 hover:border-black"
+                      ? "border-gray-300 bg-white text-gray-900 hover:border-black hover:shadow-md"
                       : "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-500"
                   } ${isSelectingThisCharacter ? "opacity-60" : ""}`}
                 >
-                  <p className="font-semibold">{character}</p>
-                  <p className="mt-1 text-xs">
-                    {isTaken
-                      ? "Ya fue escogido"
-                      : isMyTurnToPick
-                      ? "Disponible para escoger"
-                      : "Esperando turno"}
-                  </p>
+                  <div className="flex flex-col items-center text-center">
+                    <Image
+                      src={character.image}
+                      alt={character.name}
+                      width={110}
+                      height={110}
+                      className="h-28 w-28 object-contain"
+                    />
+
+                    <p className="mt-3 font-semibold">{character.name}</p>
+                    <p className="mt-1 text-xs">
+                      {isTaken
+                        ? "Ya fue escogido"
+                        : isMyTurnToPick
+                        ? "Disponible para escoger"
+                        : "Esperando turno"}
+                    </p>
+                  </div>
                 </button>
               );
             })}

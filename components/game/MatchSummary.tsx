@@ -2,7 +2,7 @@ type MatchData = {
   id: string;
   lobby_id: string;
   status: "active" | "finished" | "abandoned";
-  phase: "choosing_order" | "active" | "finished" | "abandoned";
+  phase: "choosing_order" | "choosing_character" | "active" | "finished" | "abandoned";
   order_target_number: number | null;
   current_turn_user_id: string | null;
   turn_number: number;
