@@ -3,11 +3,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import GameBoard from "@/components/game/GameBoard";
+import GameSidebar from "@/components/game/GameSidebar";
+import MatchSummary from "@/components/game/MatchSummary";
+import PlayersPanel from "@/components/game/PlayersPanel";
 
 type MatchData = {
   id: string;
   lobby_id: string;
   status: "active" | "finished" | "abandoned";
+  phase: "choosing_order" | "active" | "finished" | "abandoned";
+  order_target_number: number | null;
   current_turn_user_id: string | null;
   turn_number: number;
   winner_user_id: string | null;
@@ -24,10 +30,11 @@ type MatchPlayerRow = {
   board_position: number;
   is_finished: boolean;
   joined_at: string;
+  selected_order_number: number | null;
+  order_number_submitted_at: string | null;
   username: string | null;
   email: string | null;
 };
-
 type PlayTurnResult = {
   rolled_value: number;
   updated_position: number;
@@ -35,30 +42,6 @@ type PlayTurnResult = {
   updated_turn_number: number;
   match_finished: boolean;
 };
-
-const TOTAL_CELLS = 30;
-
-function clampBoardPosition(position: number) {
-  if (position < 0) return 0;
-  if (position > TOTAL_CELLS) return TOTAL_CELLS;
-  return position;
-}
-
-function getPlayersByCell(players: MatchPlayerRow[]) {
-  const grouped = new Map<number, MatchPlayerRow[]>();
-
-  for (const player of players) {
-    const position = clampBoardPosition(player.board_position);
-
-    if (!grouped.has(position)) {
-      grouped.set(position, []);
-    }
-
-    grouped.get(position)!.push(player);
-  }
-
-  return grouped;
-}
 
 export default function GamePage() {
   const params = useParams();
@@ -70,6 +53,9 @@ export default function GamePage() {
   const [match, setMatch] = useState<MatchData | null>(null);
   const [players, setPlayers] = useState<MatchPlayerRow[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [selectedOrderNumber, setSelectedOrderNumber] = useState("");
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [orderFinalizing, setOrderFinalizing] = useState(false);
 
   useEffect(() => {
     const lobbyId = params.id;
@@ -108,7 +94,7 @@ export default function GamePage() {
       const { data: matchData, error: matchError } = await supabase
         .from("matches")
         .select(
-          "id, lobby_id, status, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
+          "id, lobby_id, status, phase, order_target_number, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
         )
         .eq("lobby_id", lobbyId)
         .maybeSingle();
@@ -186,7 +172,7 @@ export default function GamePage() {
       const { data: playerData, error: playerError } = await supabase
         .from("match_players")
         .select(
-          "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at"
+          "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at, selected_order_number, order_number_submitted_at"
         )
         .eq("match_id", matchData.id)
         .order("turn_order", { ascending: true });
@@ -230,6 +216,8 @@ export default function GamePage() {
           board_position: player.board_position,
           is_finished: player.is_finished,
           joined_at: player.joined_at,
+          selected_order_number: player.selected_order_number,
+          order_number_submitted_at: player.order_number_submitted_at,
           username: profile?.username ?? null,
           email: profile?.email ?? null,
         };
@@ -302,8 +290,6 @@ export default function GamePage() {
   );
   const isMyTurn = currentUserId === match?.current_turn_user_id;
   const currentMatchId = match?.id ?? null;
-  const playersByCell = getPlayersByCell(players);
-  const boardCells = Array.from({ length: TOTAL_CELLS + 1 }, (_, index) => index);
 
   const handlePlayTurn = async () => {
     if (!currentMatchId) return;
@@ -339,8 +325,8 @@ export default function GamePage() {
     const { data: updatedMatch, error: updatedMatchError } = await supabase
       .from("matches")
       .select(
-        "id, lobby_id, status, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
-      )
+      "id, lobby_id, status, phase, order_target_number, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
+    )
       .eq("id", currentMatchId)
       .maybeSingle();
 
@@ -352,7 +338,7 @@ export default function GamePage() {
     const { data: updatedPlayers, error: updatedPlayersError } = await supabase
       .from("match_players")
       .select(
-        "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at"
+        "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at, selected_order_number, order_number_submitted_at"
       )
       .eq("match_id", currentMatchId)
       .order("turn_order", { ascending: true });
@@ -390,6 +376,8 @@ export default function GamePage() {
         board_position: player.board_position,
         is_finished: player.is_finished,
         joined_at: player.joined_at,
+        selected_order_number: player.selected_order_number,
+        order_number_submitted_at: player.order_number_submitted_at,
         username: profile?.username ?? null,
         email: profile?.email ?? null,
       };
@@ -401,6 +389,62 @@ export default function GamePage() {
 
     setPlayers(mergedPlayers);
   };
+
+  const handleSubmitOrderNumber = async () => {
+    if (!match?.id) return;
+
+    const parsedNumber = Number(selectedOrderNumber);
+
+    if (!Number.isInteger(parsedNumber) || parsedNumber < 1 || parsedNumber > 1000) {
+      setServerError("Debes ingresar un número entero entre 1 y 1000.");
+      return;
+    }
+
+    setServerError("");
+    setOrderSubmitting(true);
+
+    const { error } = await supabase.rpc("submit_order_number", {
+      target_match_id: match.id,
+      chosen_number: parsedNumber,
+    });
+
+    setOrderSubmitting(false);
+
+    if (error) {
+      setServerError(error.message);
+      return;
+    }
+
+    setSelectedOrderNumber("");
+    window.location.reload();
+  };
+
+  const handleFinalizeOrder = async () => {
+    if (!match?.id) return;
+
+    setServerError("");
+    setOrderFinalizing(true);
+
+    const { error } = await supabase.rpc("finalize_turn_order", {
+      target_match_id: match.id,
+    });
+
+    setOrderFinalizing(false);
+
+    if (error) {
+      setServerError(error.message);
+      return;
+    }
+
+    window.location.reload();
+  };
+
+  const submittedPlayersCount = players.filter(
+    (player) => player.selected_order_number !== null
+  ).length;
+
+  const myPlayer = players.find((player) => player.user_id === currentUserId);
+  const iAlreadySubmittedOrder = myPlayer?.selected_order_number !== null;
 
   if (loading) {
     return (
@@ -431,250 +475,168 @@ export default function GamePage() {
     );
   }
 
-  return (
-    <main className="min-h-screen bg-gray-100 px-4 py-10">
-      <div className="mx-auto max-w-4xl rounded-2xl bg-white p-8 shadow-md">
-        <h1 className="text-3xl font-bold text-gray-900">Partida en progreso</h1>
-        <p className="mt-2 text-gray-600">
-          Esta es una primera versión visual de la partida mientras se sigue construyendo el tablero principal.
-        </p>
-
-        {match && (
-          <div className="mt-8 grid gap-4 rounded-xl bg-gray-50 p-5 sm:grid-cols-2">
-            <p className="text-sm text-gray-700">
-              <span className="font-semibold">ID de partida:</span> {match.id}
-            </p>
-            <p className="text-sm text-gray-700">
-              <span className="font-semibold">Lobby ID:</span> {match.lobby_id}
-            </p>
-            <p className="text-sm text-gray-700">
-              <span className="font-semibold">Estado:</span> {match.status}
-            </p>
-            <p className="text-sm text-gray-700">
-              <span className="font-semibold">Turno número:</span> {match.turn_number}
-            </p>
-            <p className="text-sm text-gray-700 sm:col-span-2">
-              <span className="font-semibold">Turno actual:</span>{" "}
-              {match.status === "finished"
-                ? "Partida terminada"
-                : currentTurnPlayer?.username ?? "No definido"}
-            </p>
-
-            {match.status === "finished" && (
-              <p className="text-sm text-gray-700 sm:col-span-2">
-                <span className="font-semibold">Ganador:</span>{" "}
-                {winnerPlayer?.username ?? "Jugador ganador"}
-              </p>
-            )}
-          </div>
-        )}
-
-        <div className="mt-8 rounded-xl border border-gray-200 p-5">
-          <h2 className="text-xl font-semibold text-gray-900">Jugadores en partida</h2>
-
-          {players.length === 0 ? (
-            <p className="mt-3 text-sm text-gray-600">
-              No hay jugadores cargados en esta partida.
-            </p>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {players.map((player) => {
-                const isCurrentUser = player.user_id === currentUserId;
-                const isCurrentTurn = player.user_id === match?.current_turn_user_id;
-
-                return (
-                  <div
-                    key={player.id}
-                    className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700"
-                  >
-                    <p>
-                      <span className="font-semibold">Usuario:</span>{" "}
-                      {player.username ?? "Sin username"}
-                      {isCurrentUser ? " (Tú)" : ""}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Correo:</span>{" "}
-                      {player.email ?? "Sin correo"}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Orden de turno:</span>{" "}
-                      {player.turn_order}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Posición en tablero:</span>{" "}
-                      {player.board_position}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Personaje:</span>{" "}
-                      {player.character_name ?? "Sin asignar"}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Estado:</span>{" "}
-                      {player.is_finished ? "Terminó" : "En juego"}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Rol:</span>{" "}
-                      {player.turn_order === 1 ? "Host / Primer turno" : "Jugador"}
-                    </p>
-                    {isCurrentTurn && (
-                      <p className="mt-2 font-semibold text-green-700">
-                        Es el turno de este jugador.
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {match?.status === "finished" && (
-          <div className="mt-6 rounded-xl border border-yellow-300 bg-yellow-50 p-5">
-            <h2 className="text-xl font-bold text-yellow-900">Partida finalizada</h2>
-            <p className="mt-2 text-sm text-yellow-800">
-              Ganador:{" "}
-              <span className="font-semibold">
-                {winnerPlayer?.username ?? "Jugador ganador"}
-              </span>
-            </p>
-
-            {match.finished_at && (
-              <p className="mt-1 text-xs text-yellow-700">
-                Finalizó en: {new Date(match.finished_at).toLocaleString()}
-              </p>
-            )}
-          </div>
-        )}
-
-        {turnMessage && (
-          <p className="mt-6 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
-            {turnMessage}
+  if (match?.phase === "choosing_order") {
+    return (
+      <main className="min-h-screen bg-gray-100 px-4 py-10">
+        <div className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-md">
+          <h1 className="text-3xl font-bold text-gray-900">Definición de orden</h1>
+          <p className="mt-2 text-gray-600">
+            Antes de comenzar, cada jugador debe escoger un número entre 1 y 1000.
+            Luego se generará un número aleatorio y el orden se definirá según qué tan
+            cerca quede cada jugador.
           </p>
-        )}
 
-        <div className="mt-8 rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Tablero</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Vista mínima del recorrido actual de la partida.
+          {serverError && (
+            <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              {serverError}
+            </p>
+          )}
+
+          <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-5">
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold">Jugadores que ya eligieron:</span>{" "}
+              {submittedPlayersCount} / {players.length}
+            </p>
+
+            {match.order_target_number && (
+              <p className="mt-2 text-sm text-gray-700">
+                <span className="font-semibold">Número objetivo:</span>{" "}
+                {match.order_target_number}
               </p>
-            </div>
-
-            <div className="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700">
-              Meta: casilla {TOTAL_CELLS}
-            </div>
+            )}
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {boardCells.map((cellNumber) => {
-              const cellPlayers = playersByCell.get(cellNumber) ?? [];
-              const hasCurrentTurnPlayer = cellPlayers.some(
-                (player) => player.user_id === match?.current_turn_user_id
-              );
-              const hasWinner = winnerPlayer
-                ? cellPlayers.some((player) => player.user_id === winnerPlayer.user_id)
-                : false;
+          <div className="mt-6 rounded-xl border border-gray-200 p-5">
+            <h2 className="text-xl font-semibold text-gray-900">Tu elección</h2>
 
-              return (
-                <div
-                  key={cellNumber}
-                  className={`rounded-xl border p-3 shadow-sm transition ${
-                    cellNumber === TOTAL_CELLS
-                      ? "border-yellow-300 bg-yellow-50"
-                      : "border-gray-200 bg-gray-50"
-                  } ${hasCurrentTurnPlayer ? "ring-2 ring-green-500" : ""}`}
+            {iAlreadySubmittedOrder ? (
+              <p className="mt-3 text-sm text-green-700">
+                Ya enviaste tu número:{" "}
+                <span className="font-semibold">{myPlayer?.selected_order_number}</span>
+              </p>
+            ) : (
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={selectedOrderNumber}
+                  onChange={(event) => setSelectedOrderNumber(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-black"
+                  placeholder="Ingresa un número del 1 al 1000"
+                />
+
+                <button
+                  type="button"
+                  onClick={handleSubmitOrderNumber}
+                  disabled={orderSubmitting}
+                  className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-gray-900">
-                      Casilla {cellNumber}
-                    </span>
+                  {orderSubmitting ? "Enviando..." : "Confirmar número"}
+                </button>
+              </div>
+            )}
+          </div>
 
-                    {cellNumber === 0 && (
-                      <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-700">
-                        Inicio
-                      </span>
-                    )}
+          <div className="mt-6 rounded-xl border border-gray-200 p-5">
+            <h2 className="text-xl font-semibold text-gray-900">Jugadores</h2>
 
-                    {cellNumber === TOTAL_CELLS && (
-                      <span className="rounded-full bg-yellow-200 px-2 py-0.5 text-[11px] font-medium text-yellow-800">
-                        Meta
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-3 min-h-[72px]">
-                    {cellPlayers.length === 0 ? (
-                      <p className="text-xs text-gray-400">Sin jugadores</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {cellPlayers.map((player) => {
-                          const isCurrentUser = player.user_id === currentUserId;
-                          const isCurrentTurn = player.user_id === match?.current_turn_user_id;
-                          const isWinner = player.user_id === match?.winner_user_id;
-
-                          return (
-                            <div
-                              key={player.id}
-                              className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
-                                isWinner
-                                  ? "bg-yellow-200 text-yellow-900"
-                                  : isCurrentTurn
-                                  ? "bg-green-100 text-green-800"
-                                  : isCurrentUser
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-white text-gray-700 border border-gray-200"
-                              }`}
-                            >
-                              <p className="font-semibold">
-                                {player.username ?? "Jugador"}
-                                {isCurrentUser ? " (Tú)" : ""}
-                              </p>
-                              <p className="text-[11px] opacity-80">
-                                Orden {player.turn_order}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {hasWinner && (
-                    <p className="mt-2 text-xs font-semibold text-yellow-700">
-                      Jugador ganador en esta casilla.
-                    </p>
-                  )}
-
-                  {hasCurrentTurnPlayer && match?.status === "active" && (
-                    <p className="mt-2 text-xs font-semibold text-green-700">
-                      Turno actual aquí.
+            <div className="mt-4 space-y-3">
+              {players.map((player) => (
+                <div
+                  key={player.id}
+                  className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700"
+                >
+                  <p>
+                    <span className="font-semibold">Jugador:</span>{" "}
+                    {player.username ?? "Sin username"}
+                    {player.user_id === currentUserId ? " (Tú)" : ""}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Estado:</span>{" "}
+                    {player.selected_order_number !== null ? "Ya eligió número" : "Pendiente"}
+                  </p>
+                  {player.selected_order_number !== null && (
+                    <p>
+                      <span className="font-semibold">Número elegido:</span>{" "}
+                      {player.selected_order_number}
                     </p>
                   )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="mt-8 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => router.push("/home")}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
-          >
-            Volver al inicio
-          </button>
-
-          {match?.status === "active" && isMyTurn && (
+          <div className="mt-6 flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={handlePlayTurn}
-              className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90"
+              onClick={() => router.push("/home")}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
             >
-              Lanzar dado
+              Volver al inicio
             </button>
-          )}
+
+            <button
+              type="button"
+              onClick={handleFinalizeOrder}
+              disabled={orderFinalizing}
+              className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
+            >
+              {orderFinalizing ? "Definiendo orden..." : "Definir orden y continuar"}
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-gray-100 px-4 py-10">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-6 rounded-2xl bg-white p-8 shadow-md">
+          <h1 className="text-3xl font-bold text-gray-900">Partida en progreso</h1>
+          <p className="mt-2 text-gray-600">
+            Esta es una primera versión visual de la partida mientras se sigue
+            construyendo el tablero principal.
+          </p>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="space-y-6">
+            <MatchSummary
+              match={match}
+              currentTurnPlayer={currentTurnPlayer}
+              winnerPlayer={winnerPlayer}
+            />
+
+            <GameBoard
+              players={players}
+              currentUserId={currentUserId}
+              currentTurnUserId={match?.current_turn_user_id ?? null}
+              winnerUserId={match?.winner_user_id ?? null}
+              matchStatus={match?.status ?? null}
+            />
+
+            <PlayersPanel
+              players={players}
+              currentUserId={currentUserId}
+              currentTurnUserId={match?.current_turn_user_id ?? null}
+            />
+          </div>
+
+          <div>
+            <GameSidebar
+              matchStatus={match?.status ?? null}
+              turnNumber={match?.turn_number ?? null}
+              currentTurnPlayer={currentTurnPlayer}
+              winnerPlayer={winnerPlayer}
+              turnMessage={turnMessage}
+              isMyTurn={isMyTurn}
+              onPlayTurn={handlePlayTurn}
+              onGoHome={() => router.push("/home")}
+              finishedAt={match?.finished_at ?? null}
+            />
+          </div>
         </div>
       </div>
     </main>
