@@ -1,0 +1,145 @@
+drop function if exists public.play_turn(uuid);
+
+create or replace function public.play_turn(
+  target_match_id uuid
+)
+returns table (
+  rolled_value integer,
+  updated_position integer,
+  next_turn_user_id uuid,
+  updated_turn_number integer,
+  match_finished boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  match_status text;
+  current_turn_user uuid;
+  current_turn_number integer;
+  current_player_id uuid;
+  current_position integer;
+  current_order integer;
+  max_order integer;
+  next_order integer;
+  next_user uuid;
+  dice_value integer;
+  new_position integer;
+  board_limit integer := 30;
+  did_finish boolean := false;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para jugar tu turno.';
+  end if;
+
+  select m.status, m.current_turn_user_id, m.turn_number
+  into match_status, current_turn_user, current_turn_number
+  from public.matches m
+  where m.id = target_match_id;
+
+  if not found then
+    raise exception 'La partida no existe.';
+  end if;
+
+  if match_status <> 'active' then
+    raise exception 'La partida no está activa.';
+  end if;
+
+  if current_turn_user is null then
+    raise exception 'La partida no tiene un turno actual definido.';
+  end if;
+
+  if current_turn_user <> current_user_id then
+    raise exception 'No es tu turno.';
+  end if;
+
+  select mp.id, mp.board_position, mp.turn_order
+  into current_player_id, current_position, current_order
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.user_id = current_user_id;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  dice_value := floor(random() * 6 + 1)::int;
+  new_position := current_position + dice_value;
+
+  if new_position >= board_limit then
+    new_position := board_limit;
+    did_finish := true;
+  end if;
+
+  update public.match_players
+  set
+    board_position = new_position,
+    is_finished = did_finish
+  where id = current_player_id;
+
+  if did_finish then
+    update public.matches
+    set
+      status = 'finished',
+      winner_user_id = current_user_id,
+      finished_at = now(),
+      current_turn_user_id = null
+    where id = target_match_id;
+
+    update public.lobbies
+    set status = 'finished'
+    where id = (
+      select m.lobby_id
+      from public.matches m
+      where m.id = target_match_id
+    );
+
+    return query
+    select
+      dice_value,
+      new_position,
+      null::uuid,
+      current_turn_number,
+      true;
+
+    return;
+  end if;
+
+  select max(mp.turn_order)
+  into max_order
+  from public.match_players mp
+  where mp.match_id = target_match_id;
+
+  if current_order < max_order then
+    next_order := current_order + 1;
+  else
+    next_order := 1;
+  end if;
+
+  select mp.user_id
+  into next_user
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.turn_order = next_order;
+
+  update public.matches
+  set
+    current_turn_user_id = next_user,
+    turn_number = current_turn_number + 1
+  where id = target_match_id;
+
+  return query
+  select
+    dice_value,
+    new_position,
+    next_user,
+    current_turn_number + 1,
+    false;
+end;
+$$;
+
+grant execute on function public.play_turn(uuid) to authenticated;
