@@ -332,7 +332,9 @@ export default function GamePage() {
             </p>
             <p className="text-sm text-gray-700 sm:col-span-2">
               <span className="font-semibold">Turno actual:</span>{" "}
-              {currentTurnPlayer?.profiles?.[0]?.username ?? "No definido"}
+              {match.status === "finished"
+                ? "Partida terminada"
+                : currentTurnPlayer?.profiles?.[0]?.username ?? "No definido"}
             </p>
 
             {match.status === "finished" && (
@@ -435,7 +437,7 @@ export default function GamePage() {
               Lanzar dado
             </button>
           )}
-          
+
           {isHost && (
             <button
               type="button"
