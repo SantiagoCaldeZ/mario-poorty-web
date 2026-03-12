@@ -89,8 +89,17 @@ begin
     set
       status = 'finished',
       winner_user_id = current_user_id,
-      finished_at = now()
+      finished_at = now(),
+      current_turn_user_id = null
     where id = target_match_id;
+
+    update public.lobbies
+    set status = 'finished'
+    where id = (
+      select lobby_id
+      from public.matches
+      where id = target_match_id
+    );
 
     return query
     select
