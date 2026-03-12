@@ -8,6 +8,7 @@ import GameSidebar from "@/components/game/GameSidebar";
 import MatchSummary from "@/components/game/MatchSummary";
 import PlayersPanel from "@/components/game/PlayersPanel";
 import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
+import OrderSelectionScreen from "@/components/game/OrderSelectionScreen";
 
 type MatchData = {
   id: string;
@@ -440,7 +441,9 @@ export default function GamePage() {
       return;
     }
 
-    window.location.reload();
+    setTimeout(() => {
+      window.location.reload();
+    }, 7010);
   };
 
   const handleSelectCharacter = async (characterName: string) => {
@@ -466,12 +469,6 @@ export default function GamePage() {
     window.location.reload();
   };
 
-  const submittedPlayersCount = players.filter(
-    (player) => player.selected_order_number !== null
-  ).length;
-
-  const myPlayer = players.find((player) => player.user_id === currentUserId);
-  const iAlreadySubmittedOrder = myPlayer?.selected_order_number !== null;
 
   if (loading) {
     return (
@@ -483,116 +480,20 @@ export default function GamePage() {
 
   if (match?.phase === "choosing_order") {
     return (
-      <main className="min-h-screen bg-gray-100 px-4 py-10">
-        <div className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-md">
-          <h1 className="text-3xl font-bold text-gray-900">Definición de orden</h1>
-          <p className="mt-2 text-gray-600">
-            Antes de comenzar, cada jugador debe escoger un número entre 1 y 1000.
-            Luego se generará un número aleatorio y el orden se definirá según qué tan
-            cerca quede cada jugador.
-          </p>
-
-          {serverError && (
-            <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {serverError}
-            </p>
-          )}
-
-          <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-5">
-            <p className="text-sm text-gray-700">
-              <span className="font-semibold">Jugadores que ya eligieron:</span>{" "}
-              {submittedPlayersCount} / {players.length}
-            </p>
-
-            {match.order_target_number && (
-              <p className="mt-2 text-sm text-gray-700">
-                <span className="font-semibold">Número objetivo:</span>{" "}
-                {match.order_target_number}
-              </p>
-            )}
-          </div>
-
-          <div className="mt-6 rounded-xl border border-gray-200 p-5">
-            <h2 className="text-xl font-semibold text-gray-900">Tu elección</h2>
-
-            {iAlreadySubmittedOrder ? (
-              <p className="mt-3 text-sm text-green-700">
-                Ya enviaste tu número:{" "}
-                <span className="font-semibold">{myPlayer?.selected_order_number}</span>
-              </p>
-            ) : (
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={selectedOrderNumber}
-                  onChange={(event) => setSelectedOrderNumber(event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-black"
-                  placeholder="Ingresa un número del 1 al 1000"
-                />
-
-                <button
-                  type="button"
-                  onClick={handleSubmitOrderNumber}
-                  disabled={orderSubmitting}
-                  className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
-                >
-                  {orderSubmitting ? "Enviando..." : "Confirmar número"}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 rounded-xl border border-gray-200 p-5">
-            <h2 className="text-xl font-semibold text-gray-900">Jugadores</h2>
-
-            <div className="mt-4 space-y-3">
-              {players.map((player) => (
-                <div
-                  key={player.id}
-                  className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700"
-                >
-                  <p>
-                    <span className="font-semibold">Jugador:</span>{" "}
-                    {player.username ?? "Sin username"}
-                    {player.user_id === currentUserId ? " (Tú)" : ""}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Estado:</span>{" "}
-                    {player.selected_order_number !== null ? "Ya eligió número" : "Pendiente"}
-                  </p>
-                  {player.selected_order_number !== null && (
-                    <p>
-                      <span className="font-semibold">Número elegido:</span>{" "}
-                      {player.selected_order_number}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => router.push("/home")}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
-            >
-              Volver al inicio
-            </button>
-
-            <button
-              type="button"
-              onClick={handleFinalizeOrder}
-              disabled={orderFinalizing}
-              className="rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
-            >
-              {orderFinalizing ? "Definiendo orden..." : "Definir orden y continuar"}
-            </button>
-          </div>
-        </div>
-      </main>
+      <OrderSelectionScreen
+        players={players}
+        currentUserId={currentUserId}
+        selectedOrderNumber={selectedOrderNumber}
+        onSelectedOrderNumberChange={setSelectedOrderNumber}
+        onSubmitOrderNumber={handleSubmitOrderNumber}
+        onFinalizeOrder={handleFinalizeOrder}
+        onGoHome={() => router.push("/home")}
+        orderSubmitting={orderSubmitting}
+        orderFinalizing={orderFinalizing}
+        serverError={serverError}
+        orderTargetNumber={match.order_target_number}
+        startedAt={match.started_at}
+      />
     );
   }
 
