@@ -241,6 +241,9 @@ export default function GamePage() {
   const currentTurnPlayer = players.find(
     (player) => player.user_id === match?.current_turn_user_id
   );
+  const winnerPlayer = players.find(
+    (player) => player.user_id === match?.winner_user_id
+  );
   const isMyTurn = currentUserId === match?.current_turn_user_id;
   const currentMatchId = match?.id ?? null;
 
@@ -331,6 +334,13 @@ export default function GamePage() {
               <span className="font-semibold">Turno actual:</span>{" "}
               {currentTurnPlayer?.profiles?.[0]?.username ?? "No definido"}
             </p>
+
+            {match.status === "finished" && (
+              <p className="text-sm text-gray-700 sm:col-span-2">
+                <span className="font-semibold">Ganador:</span>{" "}
+                {winnerPlayer?.profiles?.[0]?.username ?? "Jugador ganador"}
+              </p>
+            )}
           </div>
         )}
 
@@ -416,7 +426,7 @@ export default function GamePage() {
             Volver al inicio
           </button>
 
-          {isMyTurn && (
+          {match?.status === "active" && isMyTurn && (
             <button
               type="button"
               onClick={handlePlayTurn}
