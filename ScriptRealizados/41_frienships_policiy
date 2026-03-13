@@ -1,0 +1,7 @@
+create policy "Users can view their friendships"
+on public.friendships
+for select
+to authenticated
+using (
+  auth.uid() = requester_id or auth.uid() = addressee_id
+);
