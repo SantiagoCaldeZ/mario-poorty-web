@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/lib/supabase";
+import Image from "next/image";
 
 const registerSchema = z.object({
   email: z.string().email("Ingresa un correo válido."),
@@ -82,83 +84,103 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md">
-        <h1 className="text-2xl font-bold text-gray-900">Crear cuenta</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Regístrate con correo, contraseña y un nombre de usuario único.
-        </p>
+    <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-green-600 via-blue-700 to-red-700 px-4">
+      <div className="flex w-full max-w-md flex-col items-center">
+        <Image
+          src="/logo/logompw.png"
+          alt="Poorty Web"
+          width={260}
+          height={260}
+          priority
+          className="mb-4 -mt-10 h-auto w-[170px] sm:w-[200px]"
+        />
 
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Correo electrónico
-            </label>
-            <input
-              type="email"
-              placeholder="correo@ejemplo.com"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-              {...register("email")}
-            />
-            {errors.email && (
-              <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
-            )}
-          </div>
+        <div className="w-full rounded-3xl border border-green-200 bg-white/95 p-8 shadow-2xl backdrop-blur">
+          <h1 className="text-2xl font-bold text-gray-900">Crear cuenta</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Regístrate con correo, contraseña y un nombre de usuario único.
+          </p>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Nombre de usuario
-            </label>
-            <input
-              type="text"
-              placeholder="tu_usuario"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-              {...register("username")}
-            />
-            {errors.username && (
-              <p className="mt-1 text-sm text-red-600">
-                {errors.username.message}
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-green-700">
+                Correo electrónico
+              </label>
+              <input
+                type="email"
+                placeholder="correo@ejemplo.com"
+                className="w-full rounded-xl border border-blue-200 px-3 py-2 outline-none transition focus:border-green-500"
+                {...register("email")}
+              />
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-green-700">
+                Nombre de usuario
+              </label>
+              <input
+                type="text"
+                placeholder="tu_usuario"
+                className="w-full rounded-xl border border-blue-200 px-3 py-2 outline-none transition focus:border-green-500"
+                {...register("username")}
+              />
+              {errors.username && (
+                <p className="mt-1 text-sm text-red-600">
+                  {errors.username.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-green-700">
+                Contraseña
+              </label>
+              <input
+                type="password"
+                placeholder="********"
+                className="w-full rounded-xl border border-blue-200 px-3 py-2 outline-none transition focus:border-green-500"
+                {...register("password")}
+              />
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-600">
+                  {errors.password.message}
+                </p>
+              )}
+            </div>
+
+            {serverError && (
+              <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                {serverError}
               </p>
             )}
-          </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              placeholder="********"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-              {...register("password")}
-            />
-            {errors.password && (
-              <p className="mt-1 text-sm text-red-600">
-                {errors.password.message}
+            {serverSuccess && (
+              <p className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-700">
+                {serverSuccess}
               </p>
             )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-xl bg-green-600 px-4 py-2 text-white transition hover:bg-green-700 disabled:opacity-60"
+            >
+              {isSubmitting ? "Creando cuenta..." : "Crear cuenta"}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <Link
+              href="/"
+              className="text-sm font-semibold text-blue-700 transition hover:text-blue-800"
+            >
+              VOLVER AL INICIO
+            </Link>
           </div>
-
-          {serverError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {serverError}
-            </p>
-          )}
-
-          {serverSuccess && (
-            <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
-              {serverSuccess}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-lg bg-black px-4 py-2 text-white transition hover:opacity-90 disabled:opacity-60"
-          >
-            {isSubmitting ? "Creando cuenta..." : "Crear cuenta"}
-          </button>
-        </form>
+        </div>
       </div>
     </main>
   );
