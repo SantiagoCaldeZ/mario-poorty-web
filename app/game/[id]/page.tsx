@@ -395,10 +395,13 @@ export default function GamePage() {
     setPlayers(mergedPlayers);
   };
 
-  const handleSubmitOrderNumber = async () => {
+  const handleSubmitOrderNumber = async (forcedNumber?: number) => {
     if (!match?.id) return;
 
-    const parsedNumber = Number(selectedOrderNumber);
+    const parsedNumber =
+      typeof forcedNumber === "number"
+        ? forcedNumber
+        : Number(selectedOrderNumber);
 
     if (!Number.isInteger(parsedNumber) || parsedNumber < 1 || parsedNumber > 1000) {
       setServerError("Debes ingresar un número entero entre 1 y 1000.");
@@ -420,17 +423,28 @@ export default function GamePage() {
       return;
     }
 
+    setPlayers((prev) =>
+      prev.map((player) =>
+        player.user_id === currentUserId
+          ? {
+              ...player,
+              selected_order_number: parsedNumber,
+              order_number_submitted_at: new Date().toISOString(),
+            }
+          : player
+      )
+    );
+
     setSelectedOrderNumber("");
-    window.location.reload();
   };
 
-  const handleFinalizeOrder = async () => {
-    if (!match?.id) return;
+  const handleFinalizeOrder = async (): Promise<number | null> => {
+    if (!match?.id) return null;
 
     setServerError("");
     setOrderFinalizing(true);
 
-    const { error } = await supabase.rpc("finalize_turn_order", {
+    const { data, error } = await supabase.rpc("finalize_turn_order", {
       target_match_id: match.id,
     });
 
@@ -438,12 +452,16 @@ export default function GamePage() {
 
     if (error) {
       setServerError(error.message);
-      return;
+      return null;
     }
+
+    const result = Array.isArray(data) ? data[0] : data;
 
     setTimeout(() => {
       window.location.reload();
-    }, 7010);
+    }, 12010);
+
+    return result?.target_number ?? null;
   };
 
   const handleSelectCharacter = async (characterName: string) => {

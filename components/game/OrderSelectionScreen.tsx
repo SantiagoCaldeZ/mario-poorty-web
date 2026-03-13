@@ -23,8 +23,8 @@ type OrderSelectionScreenProps = {
   currentUserId: string | null;
   selectedOrderNumber: string;
   onSelectedOrderNumberChange: (value: string) => void;
-  onSubmitOrderNumber: () => void;
-  onFinalizeOrder: () => Promise<void> | void;
+  onSubmitOrderNumber: (forcedNumber?: number) => Promise<void> | void;
+  onFinalizeOrder: () => Promise<number | null>;
   onGoHome: () => void;
   orderSubmitting: boolean;
   orderFinalizing: boolean;
@@ -109,8 +109,9 @@ export default function OrderSelectionScreen({
     randomAudioRef.current.currentTime = 0;
   };
 
-  const runRollingSequence = async () => {
+  const runRollingSequence = async (finalNumber: number) => {
     setIsRolling(true);
+    setShowResolvedOrder(false);
     playRandomSound();
 
     const phases = [
@@ -125,6 +126,14 @@ export default function OrderSelectionScreen({
         await new Promise((resolve) => window.setTimeout(resolve, phase.delay));
       }
     }
+
+    setRollingNumber(finalNumber);
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1200));
+
+    stopRandomSound();
+    setIsRolling(false);
+    setShowResolvedOrder(true);
   };
 
   const handleSubmitClick = () => {
@@ -133,7 +142,7 @@ export default function OrderSelectionScreen({
   };
 
   const onSubmitOrder = async () => {
-    onSubmitOrderNumber();
+    await onSubmitOrderNumber();
   };
 
   useEffect(() => {
@@ -159,68 +168,52 @@ export default function OrderSelectionScreen({
 
   useEffect(() => {
     if (!timeExpired) return;
-    if (submittedPlayersCount !== players.length) return;
-    if (orderTargetNumber !== null) return;
-    if (hasStartedRollingRef.current) return;
+    if (iAlreadySubmittedOrder) return;
+    if (hasAutoSubmittedRef.current) return;
 
-    hasStartedRollingRef.current = true;
+    hasAutoSubmittedRef.current = true;
+    setIsAutoSubmitting(true);
 
-    runRollingSequence();
-
-  }, [timeExpired, submittedPlayersCount, players.length, orderTargetNumber]);
-
-  useEffect(() => {
-    if (!timeExpired) return;
-    if (submittedPlayersCount !== players.length) return;
-    if (orderTargetNumber !== null) return;
-    if (hasAutoFinalizedRef.current) return;
-
-    hasAutoFinalizedRef.current = true;
-    setIsFinalizingAutomatically(true);
+    const randomNumber = Math.floor(Math.random() * 1000) + 1;
+    onSelectedOrderNumberChange(String(randomNumber));
 
     const timeout = window.setTimeout(async () => {
-      await onFinalizeOrder();
-    }, 500);
+      try {
+        await onSubmitOrderNumber(randomNumber);
+      } finally {
+        setIsAutoSubmitting(false);
+      }
+    }, 300);
 
     return () => window.clearTimeout(timeout);
-  }, [timeExpired, submittedPlayersCount, players.length, orderTargetNumber, onFinalizeOrder]);
+  }, [
+    timeExpired,
+    iAlreadySubmittedOrder,
+    onSelectedOrderNumberChange,
+    onSubmitOrderNumber,
+  ]);
 
   useEffect(() => {
     if (!timeExpired) return;
     if (submittedPlayersCount !== players.length) return;
-    if (orderTargetNumber !== null) return;
     if (hasStartedRollingRef.current) return;
 
-    hasStartedRollingRef.current = true;
-    setIsRolling(true);
-    playRandomSound();
+    const start = async () => {
+      hasStartedRollingRef.current = true;
 
-    let ticks = 0;
-    const interval = window.setInterval(() => {
-      setRollingNumber(Math.floor(Math.random() * 1000) + 1);
-      ticks += 1;
+      let finalNumber = orderTargetNumber;
 
-      if (ticks >= 18) {
-        window.clearInterval(interval);
+      if (finalNumber === null) {
+        finalNumber = await onFinalizeOrder();
       }
-    }, 110);
 
-    return () => window.clearInterval(interval);
-  }, [timeExpired, submittedPlayersCount, players.length, orderTargetNumber]);
+      if (finalNumber !== null) {
+        await runRollingSequence(finalNumber);
+      }
+    };
 
-  useEffect(() => {
-    if (orderTargetNumber === null) return;
-
-    setRollingNumber(orderTargetNumber);
-    setIsRolling(false);
-    stopRandomSound();
-
-    const timeout = window.setTimeout(() => {
-      setShowResolvedOrder(true);
-    }, 500);
-
-    return () => window.clearTimeout(timeout);
-  }, [orderTargetNumber]);
+    start();
+  }, [timeExpired, submittedPlayersCount, players.length, orderTargetNumber, onFinalizeOrder]);
 
   const statusText = (() => {
     if (orderTargetNumber !== null) return "Orden definido";
