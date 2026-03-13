@@ -195,12 +195,12 @@ export default function LoginForm({
 
       {showAuxLinks && (
         <div className="mt-6 space-y-3 text-center">
-          <button
-            type="button"
+          <Link
+            href="/forgot-password"
             className="text-sm font-medium text-blue-700 transition hover:text-blue-800"
           >
             ¿Olvidó su contraseña?
-          </button>
+          </Link>
 
           <p className="text-sm text-gray-700">
             ¿No tiene cuenta aún?{" "}
