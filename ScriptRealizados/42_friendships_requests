@@ -1,0 +1,7 @@
+create policy "Users can create friendship requests"
+on public.friendships
+for insert
+to authenticated
+with check (
+  auth.uid() = requester_id
+);
