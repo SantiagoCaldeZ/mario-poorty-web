@@ -1,0 +1,10 @@
+create policy "Users can update their friendships"
+on public.friendships
+for update
+to authenticated
+using (
+  auth.uid() = requester_id or auth.uid() = addressee_id
+)
+with check (
+  auth.uid() = requester_id or auth.uid() = addressee_id
+);

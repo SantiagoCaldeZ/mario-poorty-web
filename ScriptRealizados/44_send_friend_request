@@ -1,0 +1,56 @@
+create or replace function public.send_friend_request(target_user_id uuid)
+returns public.friendships
+language plpgsql
+security definer
+as $$
+declare
+  me uuid := auth.uid();
+  low_id uuid;
+  high_id uuid;
+  existing_row public.friendships;
+  new_row public.friendships;
+begin
+  if me is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if target_user_id is null then
+    raise exception 'Target user is required';
+  end if;
+
+  if me = target_user_id then
+    raise exception 'You cannot add yourself';
+  end if;
+
+  low_id := least(me, target_user_id);
+  high_id := greatest(me, target_user_id);
+
+  select *
+  into existing_row
+  from public.friendships
+  where user_low = low_id
+    and user_high = high_id;
+
+  if found then
+    raise exception 'A friendship or request already exists between these users';
+  end if;
+
+  insert into public.friendships (
+    requester_id,
+    addressee_id,
+    user_low,
+    user_high,
+    status
+  )
+  values (
+    me,
+    target_user_id,
+    low_id,
+    high_id,
+    'pending'
+  )
+  returning * into new_row;
+
+  return new_row;
+end;
+$$;

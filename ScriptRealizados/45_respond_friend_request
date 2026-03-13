@@ -1,0 +1,45 @@
+create or replace function public.respond_to_friend_request(
+  target_friendship_id uuid,
+  response text
+)
+returns public.friendships
+language plpgsql
+security definer
+as $$
+declare
+  me uuid := auth.uid();
+  row_data public.friendships;
+begin
+  if me is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if response not in ('accepted', 'rejected') then
+    raise exception 'Invalid response';
+  end if;
+
+  select *
+  into row_data
+  from public.friendships
+  where id = target_friendship_id;
+
+  if not found then
+    raise exception 'Friendship request not found';
+  end if;
+
+  if row_data.addressee_id <> me then
+    raise exception 'Only the receiving user can respond to this request';
+  end if;
+
+  if row_data.status <> 'pending' then
+    raise exception 'This request is no longer pending';
+  end if;
+
+  update public.friendships
+  set status = response
+  where id = target_friendship_id
+  returning * into row_data;
+
+  return row_data;
+end;
+$$;
