@@ -65,10 +65,10 @@ export default function LandingPage() {
         <div
           className={`z-10 flex flex-col items-center transition-all duration-[1200ms] ease-in-out ${
             introStarted
-              ? animateLogo
-                ? "-mt-20 scale-[0.42] sm:-mt-24 sm:scale-[0.38]"
-                : "mt-[8vh] scale-100"
-              : "mt-[14vh] scale-100"
+            ? animateLogo
+                ? "-mt-12 scale-[0.72] sm:-mt-16 sm:scale-[0.66]"
+                : "mt-[6vh] scale-100"
+              : "mt-[10vh] scale-100"
           }`}
         >
           <p className="mb-4 text-center text-2xl font-extrabold uppercase tracking-[0.35em] text-yellow-200 drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)] sm:text-3xl">
@@ -76,18 +76,18 @@ export default function LandingPage() {
           </p>
 
           <Image
-            src="/logo/logompw.png"
-            alt="Poorty Web"
-            width={700}
-            height={700}
+            src="/logo/logopgw.png"
+            alt="Poorty Goblin Web"
+            width={500}
+            height={900}
             priority
-            className="h-auto w-[300px] sm:w-[420px] md:w-[520px]"
+            className="h-auto w-[240px] sm:w-[280px] md:w-[320px]"
           />
 
           {!introStarted && (
             <div className="mt-8 flex flex-col items-center">
               <p className="mb-4 max-w-md text-center text-sm font-medium text-white/90 sm:text-base">
-                Entra a la experiencia de Mario Poorty Web y comienza la partida.
+                Entra a la experiencia de Poorty Goblin Web y comienza la partida.
               </p>
 
               <button
@@ -108,8 +108,8 @@ export default function LandingPage() {
         <div
           className={`w-full transition-all duration-[1300ms] ease-out ${
             showLogin
-              ? "-mt-40 translate-y-0 opacity-100"
-              : "pointer-events-none -mt-20 translate-y-6 opacity-0"
+              ? "-mt-14 translate-y-0 opacity-100"
+              : "pointer-events-none mt-2 translate-y-6 opacity-0"
           } ${loginReady ? "pointer-events-auto" : "pointer-events-none"}`}
         >
           <div className="mx-auto flex w-full max-w-6xl justify-center pb-4">

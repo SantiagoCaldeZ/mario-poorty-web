@@ -87,7 +87,7 @@ export default function RegisterPage() {
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-green-600 via-blue-700 to-red-700 px-4">
       <div className="flex w-full max-w-md flex-col items-center">
         <Image
-          src="/logo/logompw.png"
+          src="/logo/logopgw.png"
           alt="Poorty Web"
           width={260}
           height={260}

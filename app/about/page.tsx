@@ -13,8 +13,8 @@ export default function AboutPage() {
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <Image
-              src="/logo/logompw.png"
-              alt="Mario Poorty Web"
+              src="/logo/logopgw.png"
+              alt="Poorty Goblin Web"
               width={90}
               height={90}
               className="h-16 w-16 rounded-2xl object-cover"
@@ -39,15 +39,15 @@ export default function AboutPage() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[30px] border border-white/10 bg-white/10 p-6 backdrop-blur-xl">
             <p className="text-xs font-black uppercase tracking-[0.35em] text-fuchsia-300">
-              Mario Poorty Web
+              Poorty Goblin Web
             </p>
             <h2 className="mt-3 text-4xl font-black leading-tight">
               Una adaptación web pensada para jugar en línea.
             </h2>
 
             <p className="mt-5 text-base leading-7 text-white/80">
-              Mario Poorty Web nace como una evolución del proyecto original Mario
-              Poorty, con el objetivo de trasladar la experiencia multijugador a
+              Poorty Goblin Web nace como una evolución de un proyecto original, 
+              con el objetivo de trasladar la experiencia multijugador a
               una plataforma moderna, accesible desde navegador y preparada para
               crecer con funciones sociales y de juego en tiempo real.
             </p>

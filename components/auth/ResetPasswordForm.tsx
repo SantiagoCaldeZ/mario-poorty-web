@@ -99,7 +99,7 @@ export default function ResetPasswordForm() {
             <div className="mx-auto w-full max-w-md rounded-[32px] border border-emerald-200/40 bg-white/95 p-8 shadow-2xl backdrop-blur">
               <div className="mb-6 flex justify-center lg:hidden">
                 <Image
-                  src="/logo/logompw.png"
+                  src="/logo/logopgw.png"
                   alt="Poorty Web"
                   width={240}
                   height={240}
@@ -212,7 +212,7 @@ export default function ResetPasswordForm() {
               </p>
 
               <h1 className="mt-4 text-5xl font-black leading-tight text-white">
-                Prepare su regreso a Mario Poorty Web.
+                Prepare su regreso a Poorty Goblin Web.
               </h1>
 
               <p className="mt-5 text-lg text-white/80">
@@ -222,7 +222,7 @@ export default function ResetPasswordForm() {
 
               <div className="mt-8 flex justify-center lg:justify-start">
                 <Image
-                  src="/logo/logompw.png"
+                  src="/logo/logopgw.png"
                   alt="Poorty Web"
                   width={420}
                   height={420}

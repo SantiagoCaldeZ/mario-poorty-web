@@ -106,7 +106,7 @@ export default function ForgotPasswordForm() {
 
               <div className="mt-8">
                 <Image
-                  src="/logo/logompw.png"
+                  src="/logo/logopgw.png"
                   alt="Poorty Web"
                   width={420}
                   height={420}
@@ -121,7 +121,7 @@ export default function ForgotPasswordForm() {
             <div className="mx-auto w-full max-w-md rounded-[32px] border border-cyan-200/40 bg-white/95 p-8 shadow-2xl backdrop-blur">
               <div className="mb-6 flex flex-col items-center text-center lg:hidden">
                 <Image
-                  src="/logo/logompw.png"
+                  src="/logo/logopgw.png"
                   alt="Poorty Web"
                   width={240}
                   height={240}

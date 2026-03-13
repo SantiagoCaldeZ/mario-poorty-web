@@ -81,13 +81,20 @@ export default function HomePage() {
         .select("*", { count: "exact", head: true })
         .eq("winner_user_id", userId);
 
-      if (matchesPlayedError || matchesWonError) {
+      const { count: friendsCountValue, error: friendsCountError } = await supabase
+        .from("friendships")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "accepted")
+        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+
+      if (matchesPlayedError || matchesWonError || friendsCountError) {
         setLoading(false);
         return;
       }
 
       const matchesPlayed = matchesPlayedCount ?? 0;
       const matchesWon = matchesWonCount ?? 0;
+      const friendsCount = friendsCountValue ?? 0;
       const winRate =
       matchesPlayed > 0 ? Math.round((matchesWon / matchesPlayed) * 100) : 0;
 
@@ -96,7 +103,7 @@ export default function HomePage() {
         matchesPlayed,
         matchesWon,
         winRate,
-        friendsCount: 0,
+        friendsCount,
       });
       setLoading(false);
     };
@@ -182,8 +189,8 @@ export default function HomePage() {
           <div className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
               <Image
-                src="/logo/logompw.png"
-                alt="Mario Poorty Web"
+                src="/logo/logopgw.png"
+                alt="Poorty Goblin Web"
                 width={120}
                 height={120}
                 className="h-14 w-14 rounded-2xl object-cover shadow-lg"
@@ -194,7 +201,7 @@ export default function HomePage() {
                   Plataforma social de juego
                 </p>
                 <h1 className="mt-1 text-2xl font-black tracking-tight text-white">
-                  Mario Poorty Web
+                  Poorty Goblin Web
                 </h1>
               </div>
             </div>
@@ -286,6 +293,7 @@ export default function HomePage() {
 
               <button
                 type="button"
+                onClick={() => router.push("/friends")}
                 className="mt-5 w-full rounded-2xl border border-green-300/20 bg-green-500/15 px-4 py-3 text-sm font-black uppercase tracking-[0.14em] text-green-100 transition hover:bg-green-500/25"
               >
                 Añadir amigos
@@ -299,7 +307,7 @@ export default function HomePage() {
                 Centro principal
               </p>
               <h2 className="mt-3 text-4xl font-black leading-tight text-white">
-                Bienvenido a Mario Poorty Web
+                Bienvenido a Poorty Goblin Web
               </h2>
               <p className="mt-4 max-w-3xl text-base text-white/78">
                 Cree una partida, únase a una sala o prepárese para futuras
@@ -419,10 +427,10 @@ export default function HomePage() {
                   Acerca de
                 </p>
                 <h3 className="mt-3 text-2xl font-black text-white">
-                  Sobre MPW
+                  Sobre PGW
                 </h3>
                 <p className="mt-4 text-sm text-white/78">
-                  Mario Poorty Web es la adaptación web del proyecto Mario Poorty,
+                  Poorty Goblin Web es la adaptación web de un proyecto original,
                   pensada para llevar la experiencia multijugador a un entorno más
                   moderno, accesible y social.
                 </p>
@@ -444,7 +452,7 @@ export default function HomePage() {
                   de la plataforma, puede escribir a:
                 </p>
                 <p className="mt-3 w-full break-all rounded-2xl bg-black/20 px-3 py-2 text-sm font-bold text-white">
-                  mariopoortyweb@gmail.com
+                  poortygoblinweb@gmail.com
                 </p>
               </button>
           </section>

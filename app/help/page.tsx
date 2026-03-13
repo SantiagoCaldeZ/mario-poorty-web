@@ -40,8 +40,8 @@ export default function HelpPage() {
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <Image
-              src="/logo/logompw.png"
-              alt="Mario Poorty Web"
+              src="/logo/logopgw.png"
+              alt="Poorty Goblin Web"
               width={90}
               height={90}
               className="h-16 w-16 rounded-2xl object-cover"
@@ -69,7 +69,7 @@ export default function HelpPage() {
           </h2>
           <p className="mt-4 max-w-3xl text-white/80">
             Aquí encontrará respuestas rápidas sobre partidas, lobby,
-            recuperación de acceso y funcionamiento general de Mario Poorty Web.
+            recuperación de acceso y funcionamiento general de Poorty Goblin Web.
           </p>
         </section>
 

@@ -21,8 +21,8 @@ export default function SupportPage() {
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <Image
-              src="/logo/logompw.png"
-              alt="Mario Poorty Web"
+              src="/logo/logopgw.png"
+              alt="Poorty Goblin Web"
               width={90}
               height={90}
               className="h-16 w-16 rounded-2xl object-cover"
@@ -64,10 +64,10 @@ export default function SupportPage() {
                 Correo de soporte
               </p>
               <a
-                href="mailto:mariopoortyweb@gmail.com"
+                href="mailto:poortygoblinweb@gmail.com"
                 className="mt-3 block break-all text-xl font-black text-white underline decoration-emerald-300 underline-offset-4"
               >
-                mariopoortyweb@gmail.com
+                poortygoblinweb@gmail.com
               </a>
             </div>
 
