@@ -1,0 +1,21 @@
+create table if not exists public.direct_message_thread_reads (
+  thread_id uuid not null references public.direct_message_threads(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  last_read_at timestamptz null,
+  updated_at timestamptz not null default now(),
+  primary key (thread_id, user_id)
+);
+
+create index if not exists idx_dm_thread_reads_user_id
+  on public.direct_message_thread_reads(user_id);
+
+alter table public.direct_message_thread_reads enable row level security;
+
+drop policy if exists "Users can view their own dm read states"
+on public.direct_message_thread_reads;
+
+create policy "Users can view their own dm read states"
+on public.direct_message_thread_reads
+for select
+to authenticated
+using (auth.uid() = user_id);
