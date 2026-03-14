@@ -12,7 +12,7 @@ const forgotPasswordSchema = z.object({
   identifier: z.string().min(1, "Debes ingresar tu correo o nombre de usuario."),
 });
 
-type ForgotPasswordData = z.infer<typeof forgotPasswordSchema>;¿
+type ForgotPasswordData = z.infer<typeof forgotPasswordSchema>;
 
 export default function ForgotPasswordForm() {
   const [serverError, setServerError] = useState("");

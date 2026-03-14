@@ -23,7 +23,7 @@ function createServerAuthClient() {
 }
 
 export function normalizeIdentifier(value: string) {
-  return value.trim().toLowerCase();
+  return value.trim();
 }
 
 export function isEmailIdentifier(value: string) {
@@ -38,18 +38,18 @@ export async function resolveEmailFromIdentifier(
   if (!normalized) return null;
 
   if (isEmailIdentifier(normalized)) {
-    return normalized;
+    return normalized.toLowerCase();
   }
 
   const { data, error } = await supabaseAdmin
     .from("profiles")
     .select("email")
-    .eq("username", normalized)
+    .ilike("username", normalized)
     .maybeSingle();
 
   if (error) {
     console.error("resolveEmailFromIdentifier error:", error);
-    throw new Error("No se pudo resolver el identificador.");
+    throw new Error(`Lookup de username falló: ${error.message}`);
   }
 
   return data?.email?.trim().toLowerCase() ?? null;
@@ -64,7 +64,7 @@ export async function signInWithIdentifier(
   if (!email) {
     return {
       ok: false as const,
-      error: "Credenciales inválidas.",
+      error: "No se encontró una cuenta asociada a ese usuario o correo.",
     };
   }
 
@@ -75,10 +75,17 @@ export async function signInWithIdentifier(
     password,
   });
 
-  if (error || !data.session) {
+  if (error) {
     return {
       ok: false as const,
-      error: "Credenciales inválidas.",
+      error: error.message,
+    };
+  }
+
+  if (!data.session) {
+    return {
+      ok: false as const,
+      error: "No se pudo crear la sesión.",
     };
   }
 
@@ -111,7 +118,7 @@ export async function sendPasswordResetForIdentifier(
 
   if (error) {
     console.error("sendPasswordResetForIdentifier error:", error);
-    throw new Error("No se pudo procesar la recuperación.");
+    throw new Error(`Reset password falló: ${error.message}`);
   }
 
   return {

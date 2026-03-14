@@ -20,7 +20,7 @@ type FriendshipRow = {
 type ProfileRow = {
   id: string;
   username: string | null;
-  email: string | null;
+  avatar_url?: string | null;
 };
 
 export default function FriendsPage() {
@@ -41,7 +41,6 @@ export default function FriendsPage() {
 
   const loadFriendsPage = async () => {
     setPageError("");
-    setActionMessage("");
 
     const {
       data: { session },
@@ -76,10 +75,10 @@ export default function FriendsPage() {
       new Set(rows.flatMap((row) => [row.requester_id, row.addressee_id, userId]))
     );
 
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .select("id, username, email")
-      .in("id", relatedUserIds);
+    const { data: profileData, error: profileError } = await supabase.rpc(
+      "get_public_profiles",
+      { profile_ids: relatedUserIds }
+    );
 
     if (profileError) {
       setPageError(profileError.message);
@@ -87,8 +86,10 @@ export default function FriendsPage() {
       return;
     }
 
+    const publicProfiles = (profileData ?? []) as ProfileRow[];
+
     const map: Record<string, ProfileRow> = {};
-    (profileData ?? []).forEach((profile) => {
+    publicProfiles.forEach((profile) => {
       map[profile.id] = profile;
     });
 
@@ -145,11 +146,13 @@ export default function FriendsPage() {
     setActionMessage("");
     setPageError("");
 
-    const { data: targetProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("id, username")
-      .ilike("username", trimmedUsername)
-      .maybeSingle();
+    const { data: profileRows, error: profileError } = await supabase.rpc(
+      "find_public_profile_by_username",
+      { input_username: trimmedUsername }
+    );
+
+    const foundProfiles = (profileRows ?? []) as ProfileRow[];
+    const targetProfile = foundProfiles[0] ?? null;
 
     if (profileError) {
       setSearchLoading(false);
@@ -508,12 +511,14 @@ export default function FriendsPage() {
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          className="rounded-[16px] border border-[#E6D1A5]/10 bg-[#211813] px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-[#F2EAD1]/85 transition hover:bg-[#2B1F18]"
+                        <Link
+                          href={otherUser?.id ? `/friends/${otherUser.id}` : "#"}
+                          className={`rounded-[16px] border border-[#E6D1A5]/10 bg-[#211813] px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-[#F2EAD1]/85 transition ${
+                            otherUser?.id ? "hover:bg-[#2B1F18]" : "pointer-events-none opacity-50"
+                          }`}
                         >
                           Perfil
-                        </button>
+                        </Link>
                       </div>
                     );
                   })

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Link from "next/link";
 
 type UserProfile = {
   id?: string;
@@ -19,16 +20,35 @@ type UserStats = {
   friendsCount: number;
 };
 
+type DmThreadRow = {
+  thread_id: string;
+  other_user_id: string;
+  other_username: string | null;
+  other_avatar_url: string | null;
+  last_message: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  unread_count: number;
+};
+
 export default function HomePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [dmThreads, setDmThreads] = useState<DmThreadRow[]>([]);
   const [stats, setStats] = useState<UserStats>({
     matchesPlayed: 0,
     matchesWon: 0,
     winRate: 0,
     friendsCount: 0,
   });
+
+  const unreadTotal = dmThreads.reduce(
+    (sum, thread) => sum + (thread.unread_count ?? 0),
+    0
+  );
+
+  const recentDmThreads = dmThreads.slice(0, 2);
 
   useEffect(() => {
     const checkSessionAndLoadProfile = async () => {
@@ -99,6 +119,12 @@ export default function HomePage() {
       const friendsCount = friendsCountValue ?? 0;
       const winRate =
         matchesPlayed > 0 ? Math.round((matchesWon / matchesPlayed) * 100) : 0;
+
+      const { data: dmData, error: dmError } = await supabase.rpc("list_my_dm_threads");
+
+      if (!dmError) {
+        setDmThreads((dmData ?? []) as DmThreadRow[]);
+      }
 
       setProfile({
         ...data,
@@ -248,7 +274,7 @@ export default function HomePage() {
               {[
                 { label: "Inicio", href: "/home" },
                 { label: "Amigos", href: "/friends" },
-                { label: "Mensajes", href: "/home" },
+                { label: "Mensajes", href: "/messages" },
                 { label: "Ayuda", href: "/help" },
                 { label: "Acerca de", href: "/about" },
                 { label: "Soporte", href: "/support" },
@@ -259,7 +285,14 @@ export default function HomePage() {
                   onClick={() => router.push(item.href)}
                   className="rounded-full border border-[#E6D1A5]/10 bg-[#1D1612] px-4 py-2 text-[#E9DEC7]/80 transition duration-300 hover:border-[#D9B45B]/20 hover:bg-[#2A1E18] hover:text-[#FFF5DF]"
                 >
-                  {item.label}
+                  <span className="inline-flex items-center">
+                    {item.label}
+                    {item.label === "Mensajes" && unreadTotal > 0 && (
+                      <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-[#86B64B] px-2 py-1 text-[10px] font-black text-[#1A140F]">
+                        {unreadTotal}
+                      </span>
+                    )}
+                  </span>
                 </button>
               ))}
             </nav>
@@ -588,31 +621,68 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[32px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,rgba(36,26,20,0.96),rgba(22,17,13,0.96))] shadow-[0_22px_70px_rgba(0,0,0,0.38)]">
-              <div className="border-b border-[#E6D1A5]/8 bg-[linear-gradient(90deg,rgba(79,195,161,0.10),rgba(217,180,91,0.05))] px-6 py-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#B6F4E0]">
-                  Correo del campamento
-                </p>
-                <h3 className="mt-2 text-2xl font-black text-[#FFF2DF]">
-                  Mensajes directos
-                </h3>
+            <div className="overflow-hidden rounded-[30px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,rgba(38,29,22,0.96),rgba(22,17,13,0.96))] shadow-[0_22px_70px_rgba(0,0,0,0.38)]">
+              <div className="border-b border-[#E6D1A5]/8 bg-[linear-gradient(90deg,rgba(79,195,161,0.10),rgba(134,182,75,0.05))] px-6 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.24em] text-[#B6F4E0]">
+                      Correo del campamento
+                    </p>
+                    <h3 className="mt-2 text-2xl font-black text-[#FFF2DF]">
+                      Mensajes directos
+                    </h3>
+                  </div>
+
+                  <Link
+                    href="/messages"
+                    className="rounded-[16px] border border-[#E6D1A5]/10 bg-[#211813] px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-[#F2EAD1]/85 transition hover:bg-[#2B1F18]"
+                  >
+                    Abrir
+                  </Link>
+                </div>
               </div>
 
               <div className="p-6 space-y-3">
-                {mockMessages.map((message, index) => (
-                  <div
-                    key={`${message.from}-${index}`}
-                    className="rounded-[22px] border border-[#E6D1A5]/8 bg-[#17110E] p-4"
-                  >
-                    <p className="text-sm font-bold text-[#FFF2DF]">{message.from}</p>
-                    <p className="mt-1 text-sm leading-6 text-[#D9C8A8]/74">
-                      {message.text}
-                    </p>
+                <div className="rounded-[22px] border border-[#E6D1A5]/8 bg-[#17110E] px-4 py-4 text-sm text-[#D9C8A8]/74">
+                  <p className="font-bold text-[#FFF2DF]">Resumen</p>
+                  <p className="mt-1">
+                    {unreadTotal > 0
+                      ? `Tienes ${unreadTotal} mensaje(s) sin leer.`
+                      : "No tienes mensajes nuevos."}
+                  </p>
+                </div>
+
+                {recentDmThreads.length === 0 ? (
+                  <div className="rounded-[22px] border border-[#E6D1A5]/8 bg-[#17110E] px-4 py-4 text-sm text-[#D9C8A8]/74">
+                    Aún no tienes conversaciones activas.
                   </div>
-                ))}
+                ) : (
+                  recentDmThreads.map((thread) => (
+                    <Link
+                      key={thread.thread_id}
+                      href="/messages"
+                      className="block rounded-[22px] border border-[#E6D1A5]/8 bg-[#17110E] px-4 py-4 text-sm text-[#D9C8A8]/74 transition hover:bg-[#211813]"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-bold text-[#FFF2DF]">
+                          {thread.other_username ?? "Usuario"}
+                        </p>
+
+                        {thread.unread_count > 0 && (
+                          <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-[#86B64B] px-2 py-1 text-[10px] font-black text-[#1A140F]">
+                            {thread.unread_count}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-1 line-clamp-2">
+                        {thread.last_message ?? "Sin mensajes todavía."}
+                      </p>
+                    </Link>
+                  ))
+                )}
               </div>
             </div>
-
             <div className="overflow-hidden rounded-[32px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,rgba(36,26,20,0.96),rgba(22,17,13,0.96))] shadow-[0_22px_70px_rgba(0,0,0,0.38)]">
               <div className="border-b border-[#E6D1A5]/8 bg-[linear-gradient(90deg,rgba(201,119,59,0.10),rgba(217,180,91,0.05))] px-6 py-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#FFD0A8]">
