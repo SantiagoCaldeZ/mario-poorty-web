@@ -1,0 +1,5 @@
+drop policy if exists "Users can create friendship requests"
+on public.friendships;
+
+drop policy if exists "Users can update their friendships"
+on public.friendships;
