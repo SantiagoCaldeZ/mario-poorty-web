@@ -1,0 +1,78 @@
+create table if not exists public.user_presence (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  availability text not null default 'online'
+    check (availability in ('online', 'away', 'offline')),
+  activity text null,
+  route text null,
+  last_seen_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_presence_last_seen_at
+  on public.user_presence (last_seen_at desc);
+
+alter table public.user_presence enable row level security;
+
+grant select, insert, update on public.user_presence to authenticated;
+
+drop policy if exists "user_presence_select_own" on public.user_presence;
+create policy "user_presence_select_own"
+on public.user_presence
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "user_presence_insert_own" on public.user_presence;
+create policy "user_presence_insert_own"
+on public.user_presence
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "user_presence_update_own" on public.user_presence;
+create policy "user_presence_update_own"
+on public.user_presence
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_publication
+    where pubname = 'supabase_realtime'
+  ) then
+    if not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'user_presence'
+    ) then
+      execute 'alter publication supabase_realtime add table public.user_presence';
+    end if;
+
+    if not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'friendships'
+    ) then
+      execute 'alter publication supabase_realtime add table public.friendships';
+    end if;
+
+    if not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'profiles'
+    ) then
+      execute 'alter publication supabase_realtime add table public.profiles';
+    end if;
+  end if;
+end
+$$;
