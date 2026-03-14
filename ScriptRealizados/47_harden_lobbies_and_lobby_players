@@ -1,0 +1,135 @@
+drop policy if exists "Authenticated users can create lobbies"
+on public.lobbies;
+
+create or replace function public.user_is_in_lobby(target_lobby_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.lobby_players lp
+    where lp.lobby_id = target_lobby_id
+      and lp.user_id = auth.uid()
+  );
+$$;
+
+revoke all on function public.user_is_in_lobby(uuid) from public;
+grant execute on function public.user_is_in_lobby(uuid) to authenticated;
+
+drop policy if exists "Authenticated users can view lobby_players"
+on public.lobby_players;
+
+drop policy if exists "Authenticated users can insert lobby_players"
+on public.lobby_players;
+
+create policy "Users can view allowed lobby_players"
+on public.lobby_players
+for select
+to authenticated
+using (
+  auth.uid() = user_id
+  or public.user_is_in_lobby(lobby_id)
+);
+
+create or replace function public.create_lobby_safely(target_type text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  normalized_type text := lower(trim(target_type));
+  existing_membership uuid;
+  new_lobby_id uuid;
+  new_room_code text;
+  tries integer := 0;
+begin
+  if me is null then
+    raise exception 'Debes iniciar sesión para crear una sala.';
+  end if;
+
+  if normalized_type not in ('public', 'private') then
+    raise exception 'Tipo de sala inválido.';
+  end if;
+
+  select lp.lobby_id
+  into existing_membership
+  from public.lobby_players lp
+  join public.lobbies l on l.id = lp.lobby_id
+  where lp.user_id = me
+    and l.status in ('waiting', 'in_game')
+  limit 1;
+
+  if existing_membership is not null then
+    raise exception 'Ya perteneces a una sala activa. Debes salir de ella primero.';
+  end if;
+
+  loop
+    tries := tries + 1;
+
+    new_room_code := case
+      when normalized_type = 'private'
+        then upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6))
+      else null
+    end;
+
+    begin
+      insert into public.lobbies (host_id, type, room_code, status)
+      values (me, normalized_type, new_room_code, 'waiting')
+      returning id into new_lobby_id;
+
+      insert into public.lobby_players (lobby_id, user_id, is_host)
+      values (new_lobby_id, me, true);
+
+      return new_lobby_id;
+    exception
+      when unique_violation then
+        if normalized_type = 'private' and tries < 5 then
+          continue;
+        end if;
+        raise exception 'No se pudo generar un código de sala único. Intenta nuevamente.';
+    end;
+  end loop;
+end;
+$$;
+
+grant execute on function public.create_lobby_safely(text) to authenticated;
+
+create or replace function public.list_public_lobbies()
+returns table (
+  id uuid,
+  room_code text,
+  status text,
+  created_at timestamptz,
+  host_id uuid,
+  host_username text,
+  player_count integer
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    l.id,
+    l.room_code,
+    l.status,
+    l.created_at,
+    l.host_id,
+    p.username as host_username,
+    count(lp.id)::int as player_count
+  from public.lobbies l
+  join public.profiles p
+    on p.id = l.host_id
+  left join public.lobby_players lp
+    on lp.lobby_id = l.id
+  where l.type = 'public'
+    and l.status = 'waiting'
+  group by l.id, l.room_code, l.status, l.created_at, l.host_id, p.username
+  order by l.created_at desc;
+$$;
+
+revoke all on function public.list_public_lobbies() from public;
+grant execute on function public.list_public_lobbies() to authenticated;
