@@ -1,0 +1,208 @@
+create or replace function public.get_friend_profile(target_user_id uuid)
+returns table (
+  id uuid,
+  username text,
+  avatar_url text,
+  friendship_since timestamptz,
+  are_friends boolean,
+  blocked_by_me boolean,
+  blocked_me boolean
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with me as (
+    select auth.uid() as uid
+  ),
+  friendship as (
+    select f.created_at
+    from public.friendships f, me
+    where f.status = 'accepted'
+      and (
+        (f.requester_id = me.uid and f.addressee_id = target_user_id)
+        or
+        (f.requester_id = target_user_id and f.addressee_id = me.uid)
+      )
+    limit 1
+  ),
+  block_info as (
+    select
+      exists(
+        select 1
+        from public.user_blocks b, me
+        where b.blocker_id = me.uid
+          and b.blocked_user_id = target_user_id
+      ) as blocked_by_me,
+      exists(
+        select 1
+        from public.user_blocks b, me
+        where b.blocker_id = target_user_id
+          and b.blocked_user_id = me.uid
+      ) as blocked_me
+  )
+  select
+    p.id,
+    p.username,
+    p.avatar_url,
+    (select created_at from friendship) as friendship_since,
+    exists(select 1 from friendship) as are_friends,
+    bi.blocked_by_me,
+    bi.blocked_me
+  from public.profiles p
+  cross join block_info bi
+  where p.id = target_user_id
+    and (
+      exists(select 1 from friendship)
+      or bi.blocked_by_me
+      or bi.blocked_me
+    )
+  limit 1;
+$$;
+
+revoke all on function public.get_friend_profile(uuid) from public;
+grant execute on function public.get_friend_profile(uuid) to authenticated;
+
+create or replace function public.get_public_user_stats(target_user_id uuid)
+returns table (
+  matches_played integer,
+  matches_won integer,
+  win_rate numeric
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with me as (
+    select auth.uid() as uid
+  ),
+  allowed as (
+    select 1
+    from me
+    where uid is not null
+      and exists (
+        select 1
+        from public.friendships f
+        where f.status = 'accepted'
+          and (
+            (f.requester_id = uid and f.addressee_id = target_user_id)
+            or
+            (f.requester_id = target_user_id and f.addressee_id = uid)
+          )
+      )
+      and not exists (
+        select 1
+        from public.user_blocks b
+        where
+          (b.blocker_id = uid and b.blocked_user_id = target_user_id)
+          or
+          (b.blocker_id = target_user_id and b.blocked_user_id = uid)
+      )
+  ),
+  played as (
+    select count(distinct mp.match_id)::int as total
+    from public.match_players mp
+    join public.matches m on m.id = mp.match_id
+    where mp.user_id = target_user_id
+      and m.status in ('finished', 'abandoned')
+  ),
+  won as (
+    select count(*)::int as total
+    from public.matches m
+    where m.winner_user_id = target_user_id
+      and m.status = 'finished'
+  )
+  select
+    played.total as matches_played,
+    won.total as matches_won,
+    case
+      when played.total = 0 then 0
+      else round((won.total::numeric * 100.0) / played.total::numeric, 2)
+    end as win_rate
+  from allowed
+  cross join played
+  cross join won;
+$$;
+
+revoke all on function public.get_public_user_stats(uuid) from public;
+grant execute on function public.get_public_user_stats(uuid) to authenticated;
+
+create or replace function public.get_mutual_friends(target_user_id uuid)
+returns table (
+  id uuid,
+  username text,
+  avatar_url text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with me as (
+    select auth.uid() as uid
+  ),
+  allowed as (
+    select 1
+    from me
+    where uid is not null
+      and exists (
+        select 1
+        from public.friendships f
+        where f.status = 'accepted'
+          and (
+            (f.requester_id = uid and f.addressee_id = target_user_id)
+            or
+            (f.requester_id = target_user_id and f.addressee_id = uid)
+          )
+      )
+      and not exists (
+        select 1
+        from public.user_blocks b
+        where
+          (b.blocker_id = uid and b.blocked_user_id = target_user_id)
+          or
+          (b.blocker_id = target_user_id and b.blocked_user_id = uid)
+      )
+  ),
+  my_friends as (
+    select
+      case
+        when f.requester_id = (select uid from me) then f.addressee_id
+        else f.requester_id
+      end as friend_id
+    from public.friendships f
+    where f.status = 'accepted'
+      and (
+        f.requester_id = (select uid from me)
+        or
+        f.addressee_id = (select uid from me)
+      )
+  ),
+  target_friends as (
+    select
+      case
+        when f.requester_id = target_user_id then f.addressee_id
+        else f.requester_id
+      end as friend_id
+    from public.friendships f
+    where f.status = 'accepted'
+      and (
+        f.requester_id = target_user_id
+        or
+        f.addressee_id = target_user_id
+      )
+  )
+  select
+    p.id,
+    p.username,
+    p.avatar_url
+  from allowed
+  join my_friends mf on true
+  join target_friends tf on tf.friend_id = mf.friend_id
+  join public.profiles p on p.id = mf.friend_id
+  where p.id <> target_user_id
+    and p.id <> (select uid from me)
+  order by p.username asc;
+$$;
+
+revoke all on function public.get_mutual_friends(uuid) from public;
+grant execute on function public.get_mutual_friends(uuid) to authenticated;
