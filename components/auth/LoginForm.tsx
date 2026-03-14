@@ -88,32 +88,44 @@ export default function LoginForm({
   };
 
   return (
-    <div className="w-full max-w-md rounded-3xl border border-red-200 bg-white/95 p-8 shadow-2xl backdrop-blur">
-      <h1 className="text-2xl font-bold text-gray-900">Iniciar sesión</h1>
-      <p className="mt-2 text-sm text-gray-600">
-        Ingresa con tu correo o nombre de usuario y tu contraseña.
+    <div className="w-full max-w-md rounded-[32px] border border-[#E7D7A4]/15 bg-[#101813]/88 p-8 text-[#F5EFD9] shadow-[0_24px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
+      <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#D9B45B]/20 bg-[#0B120E]/70 px-4 py-2">
+        <span className="h-2.5 w-2.5 rounded-full bg-[#B8FF62] shadow-[0_0_10px_rgba(184,255,98,0.95)]" />
+        <span className="text-[11px] font-extrabold uppercase tracking-[0.34em] text-[#D9B45B]">
+          Acceso
+        </span>
+      </div>
+
+      <h1 className="text-3xl font-black tracking-tight text-[#F8F2DE]">
+        Iniciar sesión
+      </h1>
+
+      <p className="mt-2 text-sm leading-6 text-[#D6CFB8]/78">
+        Ingresa con tu correo o nombre de usuario para volver a la partida.
       </p>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="mt-7 space-y-5">
         <div>
-          <label className="mb-1 block text-sm font-medium text-red-700">
+          <label className="mb-2 block text-sm font-bold tracking-wide text-[#D9B45B]">
             Correo o nombre de usuario
           </label>
+
           <input
             type="text"
             placeholder="correo o usuario"
-            className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 outline-none transition focus:border-red-500"
+            className="w-full rounded-2xl border border-[#D9B45B]/12 bg-[#18221D]/88 px-4 py-3 text-[#F8F2DE] outline-none transition placeholder:text-[#A9B19D] focus:border-[#86F16B]/65 focus:bg-[#1C2821] focus:shadow-[0_0_0_4px_rgba(134,241,107,0.12),0_0_18px_rgba(134,241,107,0.10)]"
             {...register("identifier")}
           />
+
           {errors.identifier && (
-            <p className="mt-1 text-sm text-red-600">
+            <p className="mt-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
               {errors.identifier.message}
             </p>
           )}
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-red-700">
+          <label className="mb-2 block text-sm font-bold tracking-wide text-[#D9B45B]">
             Contraseña
           </label>
 
@@ -121,14 +133,14 @@ export default function LoginForm({
             <input
               type={showPassword ? "text" : "password"}
               placeholder="********"
-              className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 pr-12 outline-none transition focus:border-red-500"
+              className="w-full rounded-2xl border border-[#D9B45B]/12 bg-[#18221D]/88 px-4 py-3 pr-14 text-[#F8F2DE] outline-none transition placeholder:text-[#A9B19D] focus:border-[#86F16B]/65 focus:bg-[#1C2821] focus:shadow-[0_0_0_4px_rgba(134,241,107,0.12),0_0_18px_rgba(134,241,107,0.10)]"
               {...register("password")}
             />
 
             <button
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
-              className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-red-600"
+              className="absolute inset-y-0 right-2 flex items-center justify-center rounded-xl px-3 text-[#B9C4AE] transition hover:bg-[#223128] hover:text-[#B8FF62]"
               aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
             >
               {showPassword ? (
@@ -166,20 +178,20 @@ export default function LoginForm({
           </div>
 
           {errors.password && (
-            <p className="mt-1 text-sm text-red-600">
+            <p className="mt-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
               {errors.password.message}
             </p>
           )}
         </div>
 
         {serverError && (
-          <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {serverError}
           </p>
         )}
 
         {serverSuccess && (
-          <p className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-700">
+          <p className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
             {serverSuccess}
           </p>
         )}
@@ -187,7 +199,7 @@ export default function LoginForm({
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-xl bg-red-600 px-4 py-2 text-white transition hover:bg-red-700 disabled:opacity-60"
+          className="w-full rounded-2xl border border-[#F2E5B8]/10 bg-[linear-gradient(135deg,#B8FF62_0%,#86F16B_38%,#D9B45B_75%,#C77A33_100%)] px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-[#132117] shadow-[0_14px_28px_rgba(0,0,0,0.28),0_0_18px_rgba(184,255,98,0.10)] transition duration-300 hover:scale-[1.01] hover:shadow-[0_18px_34px_rgba(0,0,0,0.34),0_0_24px_rgba(184,255,98,0.16)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSubmitting ? "Entrando..." : "Entrar"}
         </button>
@@ -197,18 +209,18 @@ export default function LoginForm({
         <div className="mt-6 space-y-3 text-center">
           <Link
             href="/forgot-password"
-            className="text-sm font-medium text-blue-700 transition hover:text-blue-800"
+            className="text-sm font-semibold text-[#8FD8FF] transition hover:text-[#B8ECFF]"
           >
             ¿Olvidó su contraseña?
           </Link>
 
-          <p className="text-sm text-gray-700">
+          <p className="text-sm text-[#D6CFB8]/82">
             ¿No tiene cuenta aún?{" "}
             <Link
               href="/register"
-              className="font-bold text-green-700 underline underline-offset-2 transition hover:text-green-800"
+              className="font-extrabold text-[#B8FF62] underline decoration-[#D9B45B]/60 underline-offset-4 transition hover:text-[#D8FF9A]"
             >
-              Regístrese AQUÍ.
+              Regístrese aquí
             </Link>
           </p>
         </div>
