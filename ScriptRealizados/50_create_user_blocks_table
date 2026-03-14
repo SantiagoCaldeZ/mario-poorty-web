@@ -1,7 +1,115 @@
-create table public.user_blocks (
+create table if not exists public.user_blocks (
   blocker_id uuid not null references public.profiles(id) on delete cascade,
   blocked_user_id uuid not null references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
   primary key (blocker_id, blocked_user_id),
-  check (blocker_id <> blocked_user_id)
+  constraint user_blocks_not_self check (blocker_id <> blocked_user_id)
 );
+
+alter table public.user_blocks enable row level security;
+
+drop policy if exists "Users can view their own block relations"
+on public.user_blocks;
+
+create policy "Users can view their own block relations"
+on public.user_blocks
+for select
+to authenticated
+using (auth.uid() = blocker_id or auth.uid() = blocked_user_id);
+
+create or replace function public.remove_friend(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then
+    raise exception 'Debes iniciar sesión.';
+  end if;
+
+  if target_user_id is null or me = target_user_id then
+    raise exception 'Usuario inválido.';
+  end if;
+
+  delete from public.friendships
+  where status = 'accepted'
+    and (
+      (requester_id = me and addressee_id = target_user_id)
+      or
+      (requester_id = target_user_id and addressee_id = me)
+    );
+
+  if not found then
+    raise exception 'No existe una amistad activa con ese usuario.';
+  end if;
+end;
+$$;
+
+revoke all on function public.remove_friend(uuid) from public;
+grant execute on function public.remove_friend(uuid) to authenticated;
+
+create or replace function public.block_user(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then
+    raise exception 'Debes iniciar sesión.';
+  end if;
+
+  if target_user_id is null or me = target_user_id then
+    raise exception 'Usuario inválido.';
+  end if;
+
+  -- elimina cualquier amistad o solicitud entre ambos
+  delete from public.friendships
+  where
+    (requester_id = me and addressee_id = target_user_id)
+    or
+    (requester_id = target_user_id and addressee_id = me);
+
+  insert into public.user_blocks (blocker_id, blocked_user_id)
+  values (me, target_user_id)
+  on conflict (blocker_id, blocked_user_id) do nothing;
+end;
+$$;
+
+revoke all on function public.block_user(uuid) from public;
+grant execute on function public.block_user(uuid) to authenticated;
+
+create or replace function public.unblock_user(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then
+    raise exception 'Debes iniciar sesión.';
+  end if;
+
+  if target_user_id is null or me = target_user_id then
+    raise exception 'Usuario inválido.';
+  end if;
+
+  delete from public.user_blocks
+  where blocker_id = me
+    and blocked_user_id = target_user_id;
+
+  if not found then
+    raise exception 'Ese usuario no está bloqueado.';
+  end if;
+end;
+$$;
+
+revoke all on function public.unblock_user(uuid) from public;
+grant execute on function public.unblock_user(uuid) to authenticated;
