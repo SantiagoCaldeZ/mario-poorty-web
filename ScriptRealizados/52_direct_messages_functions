@@ -1,0 +1,244 @@
+create or replace function public.touch_dm_thread_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_touch_dm_thread_updated_at
+on public.direct_message_threads;
+
+create trigger trg_touch_dm_thread_updated_at
+before update on public.direct_message_threads
+for each row
+execute function public.touch_dm_thread_updated_at();
+
+create or replace function public.start_or_get_dm_thread(target_user_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  low_user uuid;
+  high_user uuid;
+  existing_thread_id uuid;
+begin
+  if me is null then
+    raise exception 'Debes iniciar sesión.';
+  end if;
+
+  if target_user_id is null or target_user_id = me then
+    raise exception 'Usuario inválido.';
+  end if;
+
+  if exists (
+    select 1
+    from public.user_blocks b
+    where (b.blocker_id = me and b.blocked_user_id = target_user_id)
+       or (b.blocker_id = target_user_id and b.blocked_user_id = me)
+  ) then
+    raise exception 'No puedes abrir un chat con este usuario.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.friendships f
+    where f.status = 'accepted'
+      and (
+        (f.requester_id = me and f.addressee_id = target_user_id)
+        or
+        (f.requester_id = target_user_id and f.addressee_id = me)
+      )
+  ) then
+    raise exception 'Solo puedes chatear con usuarios que sean tus amigos.';
+  end if;
+
+  low_user := least(me, target_user_id);
+  high_user := greatest(me, target_user_id);
+
+  select t.id
+  into existing_thread_id
+  from public.direct_message_threads t
+  where t.user_low = low_user
+    and t.user_high = high_user
+  limit 1;
+
+  if existing_thread_id is not null then
+    return existing_thread_id;
+  end if;
+
+  insert into public.direct_message_threads (user_low, user_high)
+  values (low_user, high_user)
+  returning id into existing_thread_id;
+
+  return existing_thread_id;
+end;
+$$;
+
+revoke all on function public.start_or_get_dm_thread(uuid) from public;
+grant execute on function public.start_or_get_dm_thread(uuid) to authenticated;
+
+create or replace function public.list_my_dm_threads()
+returns table (
+  thread_id uuid,
+  other_user_id uuid,
+  other_username text,
+  other_avatar_url text,
+  last_message text,
+  last_message_at timestamptz,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with me as (
+    select auth.uid() as uid
+  ),
+  my_threads as (
+    select
+      t.id as thread_id,
+      case
+        when t.user_low = (select uid from me) then t.user_high
+        else t.user_low
+      end as other_user_id,
+      t.created_at,
+      t.updated_at
+    from public.direct_message_threads t
+    where t.user_low = (select uid from me)
+       or t.user_high = (select uid from me)
+  ),
+  last_messages as (
+    select distinct on (m.thread_id)
+      m.thread_id,
+      m.content,
+      m.created_at
+    from public.direct_messages m
+    order by m.thread_id, m.created_at desc
+  )
+  select
+    mt.thread_id,
+    mt.other_user_id,
+    p.username as other_username,
+    p.avatar_url as other_avatar_url,
+    lm.content as last_message,
+    lm.created_at as last_message_at,
+    mt.created_at
+  from my_threads mt
+  join public.profiles p
+    on p.id = mt.other_user_id
+  left join last_messages lm
+    on lm.thread_id = mt.thread_id
+  order by coalesce(lm.created_at, mt.created_at) desc;
+$$;
+
+revoke all on function public.list_my_dm_threads() from public;
+grant execute on function public.list_my_dm_threads() to authenticated;
+
+create or replace function public.get_dm_messages(target_thread_id uuid)
+returns table (
+  id uuid,
+  thread_id uuid,
+  sender_id uuid,
+  sender_username text,
+  content text,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with allowed as (
+    select 1
+    from public.direct_message_threads t
+    where t.id = target_thread_id
+      and (t.user_low = auth.uid() or t.user_high = auth.uid())
+  )
+  select
+    m.id,
+    m.thread_id,
+    m.sender_id,
+    p.username as sender_username,
+    m.content,
+    m.created_at
+  from allowed
+  join public.direct_messages m
+    on m.thread_id = target_thread_id
+  join public.profiles p
+    on p.id = m.sender_id
+  where m.is_deleted = false
+  order by m.created_at asc;
+$$;
+
+revoke all on function public.get_dm_messages(uuid) from public;
+grant execute on function public.get_dm_messages(uuid) to authenticated;
+
+create or replace function public.send_direct_message(
+  target_thread_id uuid,
+  message_content text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  trimmed_content text := trim(message_content);
+  created_message_id uuid;
+  other_user_id uuid;
+begin
+  if me is null then
+    raise exception 'Debes iniciar sesión.';
+  end if;
+
+  if trimmed_content is null or length(trimmed_content) = 0 then
+    raise exception 'El mensaje no puede estar vacío.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.direct_message_threads t
+    where t.id = target_thread_id
+      and (t.user_low = me or t.user_high = me)
+  ) then
+    raise exception 'No tienes acceso a esta conversación.';
+  end if;
+
+  select
+    case
+      when t.user_low = me then t.user_high
+      else t.user_low
+    end
+  into other_user_id
+  from public.direct_message_threads t
+  where t.id = target_thread_id;
+
+  if exists (
+    select 1
+    from public.user_blocks b
+    where (b.blocker_id = me and b.blocked_user_id = other_user_id)
+       or (b.blocker_id = other_user_id and b.blocked_user_id = me)
+  ) then
+    raise exception 'No puedes enviar mensajes en esta conversación.';
+  end if;
+
+  insert into public.direct_messages (thread_id, sender_id, content)
+  values (target_thread_id, me, trimmed_content)
+  returning id into created_message_id;
+
+  update public.direct_message_threads
+  set updated_at = now()
+  where id = target_thread_id;
+
+  return created_message_id;
+end;
+$$;
+
+revoke all on function public.send_direct_message(uuid, text) from public;
+grant execute on function public.send_direct_message(uuid, text) to authenticated;
