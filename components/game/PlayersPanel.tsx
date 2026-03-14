@@ -8,7 +8,6 @@ type MatchPlayerRow = {
   is_finished: boolean;
   joined_at: string;
   username: string | null;
-  email: string | null;
 };
 
 type PlayersPanelProps = {
@@ -45,10 +44,6 @@ export default function PlayersPanel({
                   <span className="font-semibold">Usuario:</span>{" "}
                   {player.username ?? "Sin username"}
                   {isCurrentUser ? " (Tú)" : ""}
-                </p>
-                <p>
-                  <span className="font-semibold">Correo:</span>{" "}
-                  {player.email ?? "Sin correo"}
                 </p>
                 <p>
                   <span className="font-semibold">Orden de turno:</span>{" "}

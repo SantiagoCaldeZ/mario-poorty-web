@@ -11,8 +11,7 @@ type PublicLobbyRow = {
   created_at: string;
   host_id: string;
   host_username: string | null;
-  host_email: string | null;
-  lobby_players: { id: string }[];
+  player_count: number;
 };
 
 export default function JoinLobbyPage() {
@@ -24,50 +23,14 @@ export default function JoinLobbyPage() {
   const [serverError, setServerError] = useState("");
 
   const loadPublicLobbies = async () => {
-    const { data: lobbyData, error: lobbyError } = await supabase
-      .from("lobbies")
-      .select("id, room_code, status, created_at, host_id, lobby_players(id)")
-      .eq("type", "public")
-      .eq("status", "waiting")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.rpc("list_public_lobbies");
 
-    if (lobbyError) {
+    if (error) {
       setServerError("No se pudieron cargar las partidas públicas.");
       return;
     }
 
-    const hostIds = (lobbyData ?? []).map((lobby) => lobby.host_id);
-
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .select("id, username, email")
-      .in("id", hostIds);
-
-    if (profileError) {
-      setServerError("No se pudieron cargar los perfiles de los hosts.");
-      return;
-    }
-
-    const profilesMap = new Map(
-      (profileData ?? []).map((profile) => [profile.id, profile])
-    );
-
-    const mergedLobbies: PublicLobbyRow[] = (lobbyData ?? []).map((lobby) => {
-      const hostProfile = profilesMap.get(lobby.host_id);
-
-      return {
-        id: lobby.id,
-        room_code: lobby.room_code,
-        status: lobby.status,
-        created_at: lobby.created_at,
-        host_id: lobby.host_id,
-        host_username: hostProfile?.username ?? null,
-        host_email: hostProfile?.email ?? null,
-        lobby_players: lobby.lobby_players ?? [],
-      };
-    });
-
-    setPublicLobbies(mergedLobbies);
+    setPublicLobbies((data ?? []) as PublicLobbyRow[]);
   };
 
   useEffect(() => {
@@ -385,7 +348,7 @@ export default function JoinLobbyPage() {
                     </p>
                     <p>
                       <span className="font-semibold">Jugadores:</span>{" "}
-                      {lobby.lobby_players?.length ?? 0}/6
+                      {lobby.player_count ?? 0}/6
                     </p>
                   </div>
 

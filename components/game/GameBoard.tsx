@@ -8,7 +8,6 @@ type MatchPlayerRow = {
   is_finished: boolean;
   joined_at: string;
   username: string | null;
-  email: string | null;
 };
 
 type GameBoardProps = {

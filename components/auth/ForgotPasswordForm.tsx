@@ -12,11 +12,7 @@ const forgotPasswordSchema = z.object({
   identifier: z.string().min(1, "Debes ingresar tu correo o nombre de usuario."),
 });
 
-type ForgotPasswordData = z.infer<typeof forgotPasswordSchema>;
-
-type EmailLookupRow = {
-  email: string;
-};
+type ForgotPasswordData = z.infer<typeof forgotPasswordSchema>;¿
 
 export default function ForgotPasswordForm() {
   const [serverError, setServerError] = useState("");
@@ -37,44 +33,26 @@ export default function ForgotPasswordForm() {
     setServerError("");
     setServerSuccess("");
 
-    const normalizedIdentifier = data.identifier.trim().toLowerCase();
-    let emailToUse = normalizedIdentifier;
-
-    if (!normalizedIdentifier.includes("@")) {
-      const { data: result, error: rpcError } = await supabase.rpc(
-        "get_email_by_username",
-        { input_username: normalizedIdentifier }
-      );
-
-      if (rpcError) {
-        setServerError("No se pudo procesar la recuperación en este momento.");
-        return;
-      }
-
-      const rows = result as EmailLookupRow[] | null;
-
-      if (!rows || rows.length === 0 || !rows[0]?.email) {
-        setServerSuccess(
-          "Si existe una cuenta asociada, te enviaremos instrucciones para restablecer tu contraseña."
-        );
-        return;
-      }
-
-      emailToUse = rows[0].email;
-    }
-
-    const { error } = await supabase.auth.resetPasswordForEmail(emailToUse, {
-      redirectTo: `${window.location.origin}/reset-password`,
+    const response = await fetch("/api/auth/forgot-password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        identifier: data.identifier,
+      }),
     });
 
-    if (error) {
-      console.error("Error recovery:", error);
-      setServerError(error.message);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setServerError(payload.error ?? "No se pudo procesar la recuperación.");
       return;
     }
 
     setServerSuccess(
-      "Si existe una cuenta asociada, te enviaremos instrucciones para restablecer tu contraseña."
+      payload.message ??
+        "Si existe una cuenta asociada, te enviaremos instrucciones para restablecer tu contraseña."
     );
   };
 

@@ -15,7 +15,6 @@ type MatchPlayerRow = {
   selected_order_number: number | null;
   order_number_submitted_at: string | null;
   username: string | null;
-  email: string | null;
 };
 
 type CharacterSelectionScreenProps = {

@@ -60,9 +60,11 @@ export default function HomePage() {
         return;
       }
 
+      const sessionEmail = session.user.email ?? "";
+
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, username, email, created_at")
+        .select("id, username, created_at")
         .eq("id", userId)
         .maybeSingle();
 
@@ -98,7 +100,10 @@ export default function HomePage() {
       const winRate =
         matchesPlayed > 0 ? Math.round((matchesWon / matchesPlayed) * 100) : 0;
 
-      setProfile(data);
+      setProfile({
+        ...data,
+        email: sessionEmail,
+      });
       setStats({
         matchesPlayed,
         matchesWon,

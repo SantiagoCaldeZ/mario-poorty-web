@@ -4,17 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-function generateRoomCode(length = 6) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let result = "";
-
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-
-  return result;
-}
-
 export default function CreateLobbyPage() {
   const router = useRouter();
   const [matchType, setMatchType] = useState<"public" | "private">("public");
@@ -93,67 +82,18 @@ export default function CreateLobbyPage() {
       return;
     }
 
-    const maxAttempts = matchType === "private" ? 5 : 1;
-    let lobbyData: { id: string } | null = null;
-    let lobbyError: { message: string; code?: string } | null = null;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const roomCode = matchType === "private" ? generateRoomCode() : null;
-
-      const { data, error } = await supabase
-        .from("lobbies")
-        .insert({
-          host_id: userId,
-          type: matchType,
-          room_code: roomCode,
-          status: "waiting",
-        })
-        .select("id")
-        .single();
-
-      if (!error && data) {
-        lobbyData = data;
-        lobbyError = null;
-        break;
-      }
-
-      lobbyError = error;
-
-      const isUniqueViolation = error?.code === "23505";
-
-      if (!(matchType === "private" && isUniqueViolation)) {
-        break;
-      }
-    }
-
-    if (lobbyError || !lobbyData) {
-      setServerError(
-        lobbyError?.code === "23505"
-          ? "No se pudo generar un código de sala único. Intenta nuevamente."
-          : lobbyError?.message ?? "No se pudo crear la sala."
-      );
-      setLoading(false);
-      return;
-    }
-
-    const { error: playerError } = await supabase.from("lobby_players").insert({
-      lobby_id: lobbyData.id,
-      user_id: userId,
-      is_host: true,
+    const { data: lobbyId, error } = await supabase.rpc("create_lobby_safely", {
+      target_type: matchType,
     });
 
-    if (playerError) {
-      await supabase.from("lobbies").delete().eq("id", lobbyData.id);
-
-      setServerError(
-        "No se pudo registrar al host en la sala. Se canceló la creación del lobby."
-      );
+    if (error || !lobbyId) {
+      setServerError(error?.message ?? "No se pudo crear la sala.");
       setLoading(false);
       return;
     }
 
     setLoading(false);
-    router.push(`/lobby/${lobbyData.id}`);
+    router.push(`/lobby/${lobbyId}`);
   };
 
   if (pageLoading) {

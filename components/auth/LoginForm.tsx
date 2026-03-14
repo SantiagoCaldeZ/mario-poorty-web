@@ -15,10 +15,6 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
-type EmailLookupRow = {
-  email: string;
-};
-
 type LoginFormProps = {
   showAuxLinks?: boolean;
 };
@@ -47,44 +43,36 @@ export default function LoginForm({
     setServerError("");
     setServerSuccess("");
 
-    const normalizedIdentifier = data.identifier.trim().toLowerCase();
-    const password = data.password;
-
-    let emailToUse = normalizedIdentifier;
-    const isEmail = normalizedIdentifier.includes("@");
-
-    if (!isEmail) {
-      const { data: result, error: rpcError } = await supabase.rpc(
-        "get_email_by_username",
-        { input_username: normalizedIdentifier }
-      );
-
-      if (rpcError) {
-        setServerError("No se pudo validar el nombre de usuario.");
-        return;
-      }
-
-      const rows = result as EmailLookupRow[] | null;
-
-      if (!rows || rows.length === 0 || !rows[0]?.email) {
-        setServerError("No existe una cuenta con ese nombre de usuario.");
-        return;
-      }
-
-      emailToUse = rows[0].email;
-    }
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: emailToUse,
-      password,
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        identifier: data.identifier,
+        password: data.password,
+      }),
     });
 
-    if (error) {
-      setServerError(error.message);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setServerError(payload.error ?? "No se pudo iniciar sesión.");
+      return;
+    }
+
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: payload.session.access_token,
+      refresh_token: payload.session.refresh_token,
+    });
+
+    if (sessionError) {
+      setServerError("No se pudo abrir la sesión en el navegador.");
       return;
     }
 
     router.push("/home");
+    router.refresh();
   };
 
   return (

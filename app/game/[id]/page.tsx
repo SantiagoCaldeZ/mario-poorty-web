@@ -36,8 +36,14 @@ type MatchPlayerRow = {
   selected_order_number: number | null;
   order_number_submitted_at: string | null;
   username: string | null;
-  email: string | null;
 };
+
+type PublicProfileRow = {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+};
+
 type PlayTurnResult = {
   rolled_value: number;
   updated_position: number;
@@ -86,7 +92,7 @@ export default function GamePage() {
       } = await supabase.auth.getSession();
 
       if (!session?.user) {
-        router.replace("/login");
+        router.replace("/");
         return;
       }
 
@@ -192,10 +198,10 @@ export default function GamePage() {
 
       const userIds = (playerData ?? []).map((player) => player.user_id);
 
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, username, email")
-        .in("id", userIds);
+      const { data: profileData, error: profileError } = await supabase.rpc(
+        "get_public_profiles",
+        { profile_ids: userIds }
+      );
 
       if (profileError) {
         if (isMounted) {
@@ -205,8 +211,10 @@ export default function GamePage() {
         return;
       }
 
+      const publicProfiles = (profileData ?? []) as PublicProfileRow[];
+
       const profilesMap = new Map(
-        (profileData ?? []).map((profile) => [profile.id, profile])
+        publicProfiles.map((profile) => [profile.id, profile])
       );
 
       const mergedPlayers: MatchPlayerRow[] = (playerData ?? []).map((player) => {
@@ -224,7 +232,6 @@ export default function GamePage() {
           selected_order_number: player.selected_order_number,
           order_number_submitted_at: player.order_number_submitted_at,
           username: profile?.username ?? null,
-          email: profile?.email ?? null,
         };
       });
 
@@ -330,8 +337,8 @@ export default function GamePage() {
     const { data: updatedMatch, error: updatedMatchError } = await supabase
       .from("matches")
       .select(
-      "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
-    )
+        "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
+      )
       .eq("id", currentMatchId)
       .maybeSingle();
 
@@ -355,18 +362,20 @@ export default function GamePage() {
 
     const userIds = (updatedPlayers ?? []).map((player) => player.user_id);
 
-    const { data: updatedProfiles, error: updatedProfilesError } = await supabase
-      .from("profiles")
-      .select("id, username, email")
-      .in("id", userIds);
+    const { data: updatedProfiles, error: updatedProfilesError } = await supabase.rpc(
+      "get_public_profiles",
+      { profile_ids: userIds }
+    );
 
     if (updatedProfilesError) {
       setServerError(updatedProfilesError.message);
       return;
     }
 
+    const publicProfiles = (updatedProfiles ?? []) as PublicProfileRow[];
+
     const profilesMap = new Map(
-      (updatedProfiles ?? []).map((profile) => [profile.id, profile])
+      publicProfiles.map((profile) => [profile.id, profile])
     );
 
     const mergedPlayers: MatchPlayerRow[] = (updatedPlayers ?? []).map((player) => {
@@ -384,7 +393,6 @@ export default function GamePage() {
         selected_order_number: player.selected_order_number,
         order_number_submitted_at: player.order_number_submitted_at,
         username: profile?.username ?? null,
-        email: profile?.email ?? null,
       };
     });
 
@@ -486,7 +494,6 @@ export default function GamePage() {
 
     window.location.reload();
   };
-
 
   if (loading) {
     return (
