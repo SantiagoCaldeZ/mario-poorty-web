@@ -1,0 +1,7 @@
+create table public.user_blocks (
+  blocker_id uuid not null references public.profiles(id) on delete cascade,
+  blocked_user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_user_id),
+  check (blocker_id <> blocked_user_id)
+);
