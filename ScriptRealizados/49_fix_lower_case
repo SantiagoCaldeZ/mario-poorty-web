@@ -1,0 +1,21 @@
+create or replace function public.find_public_profile_by_username(input_username text)
+returns table (
+  id uuid,
+  username text,
+  avatar_url text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    p.id,
+    p.username,
+    p.avatar_url
+  from public.profiles p
+  where p.username ilike trim(input_username)
+  limit 1;
+$$;
+
+revoke all on function public.find_public_profile_by_username(text) from public;
+grant execute on function public.find_public_profile_by_username(text) to authenticated;
