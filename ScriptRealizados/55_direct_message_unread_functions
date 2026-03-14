@@ -1,0 +1,33 @@
+create or replace function public.mark_dm_thread_as_read(target_thread_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then
+    raise exception 'Debes iniciar sesión.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.direct_message_threads t
+    where t.id = target_thread_id
+      and (t.user_low = me or t.user_high = me)
+  ) then
+    raise exception 'No tienes acceso a esta conversación.';
+  end if;
+
+  insert into public.direct_message_thread_reads (thread_id, user_id, last_read_at, updated_at)
+  values (target_thread_id, me, now(), now())
+  on conflict (thread_id, user_id)
+  do update set
+    last_read_at = now(),
+    updated_at = now();
+end;
+$$;
+
+revoke all on function public.mark_dm_thread_as_read(uuid) from public;
+grant execute on function public.mark_dm_thread_as_read(uuid) to authenticated;
