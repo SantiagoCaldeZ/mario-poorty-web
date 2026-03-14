@@ -1,0 +1,80 @@
+drop function if exists public.list_my_dm_threads();
+
+create or replace function public.list_my_dm_threads()
+returns table (
+  thread_id uuid,
+  other_user_id uuid,
+  other_username text,
+  other_avatar_url text,
+  last_message text,
+  last_message_at timestamptz,
+  created_at timestamptz,
+  unread_count integer
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with me as (
+    select auth.uid() as uid
+  ),
+  my_threads as (
+    select
+      t.id as thread_id,
+      case
+        when t.user_low = (select uid from me) then t.user_high
+        else t.user_low
+      end as other_user_id,
+      t.created_at,
+      t.updated_at
+    from public.direct_message_threads t
+    where t.user_low = (select uid from me)
+       or t.user_high = (select uid from me)
+  ),
+  last_messages as (
+    select distinct on (m.thread_id)
+      m.thread_id,
+      m.content,
+      m.created_at
+    from public.direct_messages m
+    order by m.thread_id, m.created_at desc
+  ),
+  read_state as (
+    select
+      r.thread_id,
+      r.last_read_at
+    from public.direct_message_thread_reads r
+    where r.user_id = (select uid from me)
+  ),
+  unread_counts as (
+    select
+      m.thread_id,
+      count(*)::int as unread_count
+    from public.direct_messages m
+    left join read_state rs on rs.thread_id = m.thread_id
+    where m.sender_id <> (select uid from me)
+      and m.created_at > coalesce(rs.last_read_at, '1970-01-01'::timestamptz)
+      and m.is_deleted = false
+    group by m.thread_id
+  )
+  select
+    mt.thread_id,
+    mt.other_user_id,
+    p.username as other_username,
+    p.avatar_url as other_avatar_url,
+    lm.content as last_message,
+    lm.created_at as last_message_at,
+    mt.created_at,
+    coalesce(uc.unread_count, 0) as unread_count
+  from my_threads mt
+  join public.profiles p
+    on p.id = mt.other_user_id
+  left join last_messages lm
+    on lm.thread_id = mt.thread_id
+  left join unread_counts uc
+    on uc.thread_id = mt.thread_id
+  order by coalesce(lm.created_at, mt.created_at) desc;
+$$;
+
+revoke all on function public.list_my_dm_threads() from public;
+grant execute on function public.list_my_dm_threads() to authenticated;
