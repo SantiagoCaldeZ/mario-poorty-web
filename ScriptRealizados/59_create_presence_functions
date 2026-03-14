@@ -1,0 +1,174 @@
+create or replace function public.touch_my_presence(
+  p_availability text default 'online',
+  p_activity text default null,
+  p_route text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  safe_availability text;
+begin
+  if me is null then
+    raise exception 'Authentication required';
+  end if;
+
+  safe_availability :=
+    case lower(coalesce(trim(p_availability), ''))
+      when 'away' then 'away'
+      else 'online'
+    end;
+
+  insert into public.user_presence (
+    user_id,
+    availability,
+    activity,
+    route,
+    last_seen_at,
+    updated_at
+  )
+  values (
+    me,
+    safe_availability,
+    nullif(trim(p_activity), ''),
+    nullif(trim(p_route), ''),
+    now(),
+    now()
+  )
+  on conflict (user_id)
+  do update set
+    availability = excluded.availability,
+    activity = excluded.activity,
+    route = excluded.route,
+    last_seen_at = now(),
+    updated_at = now();
+end;
+$$;
+
+revoke all on function public.touch_my_presence(text, text, text) from public;
+grant execute on function public.touch_my_presence(text, text, text) to authenticated;
+
+
+create or replace function public.mark_my_presence_offline()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then
+    raise exception 'Authentication required';
+  end if;
+
+  insert into public.user_presence (
+    user_id,
+    availability,
+    activity,
+    route,
+    last_seen_at,
+    updated_at
+  )
+  values (
+    me,
+    'offline',
+    'Desconectado',
+    null,
+    now(),
+    now()
+  )
+  on conflict (user_id)
+  do update set
+    availability = 'offline',
+    activity = 'Desconectado',
+    route = null,
+    last_seen_at = now(),
+    updated_at = now();
+end;
+$$;
+
+revoke all on function public.mark_my_presence_offline() from public;
+grant execute on function public.mark_my_presence_offline() to authenticated;
+
+
+create or replace function public.list_my_friends_presence()
+returns table (
+  friend_user_id uuid,
+  username text,
+  avatar_url text,
+  presence_status text,
+  activity text,
+  route text,
+  last_seen_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with me as (
+    select auth.uid() as uid
+  ),
+  friend_ids as (
+    select
+      case
+        when f.requester_id = me.uid then f.addressee_id
+        else f.requester_id
+      end as friend_id
+    from public.friendships f
+    cross join me
+    where me.uid is not null
+      and f.status = 'accepted'
+      and (
+        f.requester_id = me.uid
+        or f.addressee_id = me.uid
+      )
+  ),
+  base as (
+    select
+      p.id as friend_user_id,
+      p.username,
+      p.avatar_url,
+      up.availability,
+      up.activity,
+      up.route,
+      up.last_seen_at
+    from friend_ids fi
+    join public.profiles p
+      on p.id = fi.friend_id
+    left join public.user_presence up
+      on up.user_id = fi.friend_id
+  )
+  select
+    b.friend_user_id,
+    b.username,
+    b.avatar_url,
+    case
+      when b.last_seen_at is null then 'offline'
+      when b.availability = 'offline' then 'offline'
+      when b.last_seen_at < now() - interval '65 seconds' then 'offline'
+      when b.availability = 'away' then 'away'
+      else 'online'
+    end as presence_status,
+    b.activity,
+    b.route,
+    b.last_seen_at
+  from base b
+  order by
+    case
+      when b.last_seen_at is not null
+        and b.availability = 'online'
+        and b.last_seen_at >= now() - interval '65 seconds' then 0
+      when b.last_seen_at is not null
+        and b.availability = 'away'
+        and b.last_seen_at >= now() - interval '65 seconds' then 1
+      else 2
+    end,
+    lower(coalesce(b.username, '')) asc;
+$$;
+
+revoke all on function public.list_my_friends_presence() from public;
+grant execute on function public.list_my_friends_presence() to authenticated;
