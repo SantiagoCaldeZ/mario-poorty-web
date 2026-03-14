@@ -1,0 +1,57 @@
+drop policy if exists "Users can view their own profile"
+on public.profiles;
+
+drop policy if exists "Authenticated users can view profiles"
+on public.profiles;
+
+create policy "Users can view their own profile"
+on public.profiles
+for select
+to authenticated
+using (auth.uid() = id);
+
+revoke execute on function public.get_email_by_username(text)
+from anon, authenticated;
+
+create or replace function public.get_public_profiles(profile_ids uuid[])
+returns table (
+  id uuid,
+  username text,
+  avatar_url text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    p.id,
+    p.username,
+    p.avatar_url
+  from public.profiles p
+  where p.id = any(coalesce(profile_ids, '{}'::uuid[]));
+$$;
+
+revoke all on function public.get_public_profiles(uuid[]) from public;
+grant execute on function public.get_public_profiles(uuid[]) to authenticated;
+
+create or replace function public.find_public_profile_by_username(input_username text)
+returns table (
+  id uuid,
+  username text,
+  avatar_url text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    p.id,
+    p.username,
+    p.avatar_url
+  from public.profiles p
+  where lower(trim(p.username)) = lower(trim(input_username))
+  limit 1;
+$$;
+
+revoke all on function public.find_public_profile_by_username(text) from public;
+grant execute on function public.find_public_profile_by_username(text) to authenticated;
