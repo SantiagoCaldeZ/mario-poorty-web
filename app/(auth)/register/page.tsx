@@ -44,7 +44,7 @@ export default function RegisterPage() {
     setServerSuccess("");
 
     const normalizedEmail = data.email.trim().toLowerCase();
-    const normalizedUsername = data.username.trim().toLowerCase();
+    const normalizedUsername = data.username.trim();
 
     const { data: existingProfile, error: usernameCheckError } = await supabase
       .from("profiles")
