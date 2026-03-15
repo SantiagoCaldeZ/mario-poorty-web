@@ -5,6 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import FriendsPresenceCard from "@/components/social/FriendsPresenceCard";
+import FriendsPresenceDrawer from "@/components/social/FriendsPresenceDrawer";
+import { useFriendsPresence } from "@/lib/hooks/useFriendsPresence";
 
 type UserProfile = {
   id?: string;
@@ -42,6 +45,9 @@ export default function HomePage() {
     winRate: 0,
     friendsCount: 0,
   });
+  const [presenceDrawerOpen, setPresenceDrawerOpen] = useState(false);
+
+  const { friendsPresence, loadingPresence, presenceError } = useFriendsPresence();
 
   const unreadTotal = dmThreads.reduce(
     (sum, thread) => sum + (thread.unread_count ?? 0),
@@ -120,7 +126,9 @@ export default function HomePage() {
       const winRate =
         matchesPlayed > 0 ? Math.round((matchesWon / matchesPlayed) * 100) : 0;
 
-      const { data: dmData, error: dmError } = await supabase.rpc("list_my_dm_threads");
+      const { data: dmData, error: dmError } = await supabase.rpc(
+        "list_my_dm_threads"
+      );
 
       if (!dmError) {
         setDmThreads((dmData ?? []) as DmThreadRow[]);
@@ -143,6 +151,7 @@ export default function HomePage() {
   }, [router]);
 
   const handleLogout = async () => {
+    await supabase.rpc("mark_my_presence_offline");
     await supabase.auth.signOut();
     router.push("/");
   };
@@ -188,22 +197,16 @@ export default function HomePage() {
     },
   ];
 
-  const mockFriends = [
-    { name: "LuigiFan", status: "En línea" },
-    { name: "PeachPlayer", status: "Ausente" },
-    { name: "ToadRush", status: "Próximamente" },
-  ];
+  const activeFriendsCount = useMemo(
+    () =>
+      friendsPresence.filter((friend) => friend.presence_status !== "offline")
+        .length,
+    [friendsPresence]
+  );
 
-  const mockMessages = [
-    { from: "Sistema", text: "Tus mensajes directos aparecerán aquí." },
-    { from: "Amigos", text: "Podrás chatear e invitar jugadores más adelante." },
-  ];
-
-  const mockNotifications = [
-    "La sección de amigos estará disponible próximamente.",
-    "Los mensajes directos se activarán en una futura versión.",
-    "Tu cuenta ya está lista para crear o unirte a partidas.",
-  ];
+  const latestConversationName = useMemo(() => {
+    return recentDmThreads[0]?.other_username ?? null;
+  }, [recentDmThreads]);
 
   if (loading) {
     return (
@@ -351,6 +354,7 @@ export default function HomePage() {
 
                   <button
                     type="button"
+                    onClick={() => router.push("/profile")}
                     className="mt-5 rounded-[20px] border border-[#E6D1A5]/10 bg-[linear-gradient(135deg,#D9B45B_0%,#C7923A_100%)] px-5 py-3 text-sm font-black uppercase tracking-[0.14em] text-[#1A140F] shadow-[0_12px_28px_rgba(0,0,0,0.28)] transition hover:scale-[1.02]"
                   >
                     Ver perfil
@@ -366,7 +370,9 @@ export default function HomePage() {
                       <div className="mb-3 flex items-center gap-3">
                         <div className={`h-10 w-10 rounded-2xl ${stat.glow}`} />
                         <div className="min-w-0">
-                          <p className={`text-[11px] font-black uppercase tracking-[0.2em] ${stat.text}`}>
+                          <p
+                            className={`text-[11px] font-black uppercase tracking-[0.2em] ${stat.text}`}
+                          >
                             {stat.label}
                           </p>
                           <p className="mt-1 text-3xl font-black text-[#F7F0DC]">
@@ -420,7 +426,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     onClick={() => router.push("/lobby/create")}
-                    className="group relative overflow-hidden rounded-[30px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,#3A2418_0%,#2A1B13_100%)] p-6 text-left shadow-[0_18px_45px_rgba(0,0,0,0.3)] transition duration-300 hover:-translate-y-1"
+                    className="group relative overflow-hidden rounded-[30px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,#3A2418_0%,#2A1B13_100%)] p-6 text-left shadow-[0_18px_45px_rgba(0,0,0,0.3)] transition duration-300 hover:-translate-y-1 hover:border-[#C9773B]/20"
                   >
                     <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-[#C9773B]/14 blur-3xl" />
                     <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#FFD0A8]">
@@ -441,7 +447,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     onClick={() => router.push("/lobby/join")}
-                    className="group relative overflow-hidden rounded-[30px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,#25311F_0%,#182117_100%)] p-6 text-left shadow-[0_18px_45px_rgba(0,0,0,0.3)] transition duration-300 hover:-translate-y-1"
+                    className="group relative overflow-hidden rounded-[30px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,#25311F_0%,#182117_100%)] p-6 text-left shadow-[0_18px_45px_rgba(0,0,0,0.3)] transition duration-300 hover:-translate-y-1 hover:border-[#86B64B]/20"
                   >
                     <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-[#86B64B]/14 blur-3xl" />
                     <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#D8F1AA]">
@@ -458,47 +464,6 @@ export default function HomePage() {
                       Ir a unión →
                     </p>
                   </button>
-                </div>
-
-                <div className="mt-5 grid gap-4 md:grid-cols-3">
-                  <div className="rounded-[26px] border border-[#E6D1A5]/10 bg-[#17110E] p-5">
-                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#FFD0A8]">
-                      Tablón
-                    </p>
-                    <h4 className="mt-2 text-xl font-black text-[#FFF2DF]">
-                      Invitar aliados
-                    </h4>
-                    <p className="mt-2 text-sm leading-6 text-[#D9C8A8]/78">
-                      Muy pronto podrá llamar a sus amigos directo al lobby y
-                      montar sesiones más rápidas.
-                    </p>
-                  </div>
-
-                  <div className="rounded-[26px] border border-[#E6D1A5]/10 bg-[#17110E] p-5">
-                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#D8F1AA]">
-                      Registro
-                    </p>
-                    <h4 className="mt-2 text-xl font-black text-[#FFF2DF]">
-                      Actividad reciente
-                    </h4>
-                    <p className="mt-2 text-sm leading-6 text-[#D9C8A8]/78">
-                      Aquí verá sus últimas partidas, avances y resultados dentro
-                      del universo PGW.
-                    </p>
-                  </div>
-
-                  <div className="rounded-[26px] border border-[#E6D1A5]/10 bg-[#17110E] p-5">
-                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#B6F4E0]">
-                      Eventos
-                    </p>
-                    <h4 className="mt-2 text-xl font-black text-[#FFF2DF]">
-                      Noticias del campamento
-                    </h4>
-                    <p className="mt-2 text-sm leading-6 text-[#D9C8A8]/78">
-                      Retos, novedades y anuncios aparecerán aquí como parte del
-                      movimiento vivo de la plataforma.
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -564,62 +529,12 @@ export default function HomePage() {
           </section>
 
           <aside className="space-y-6">
-            <div className="overflow-hidden rounded-[32px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,rgba(36,26,20,0.96),rgba(22,17,13,0.96))] shadow-[0_22px_70px_rgba(0,0,0,0.38)]">
-              <div className="border-b border-[#E6D1A5]/8 bg-[linear-gradient(90deg,rgba(134,182,75,0.10),rgba(217,180,91,0.05))] px-6 py-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#D8F1AA]">
-                  Gremio social
-                </p>
-                <h3 className="mt-2 text-2xl font-black text-[#FFF2DF]">
-                  Amigos conectados
-                </h3>
-              </div>
-
-              <div className="p-6">
-                <div className="mb-4 flex items-center justify-end">
-                  <button
-                    type="button"
-                    className="rounded-full border border-[#E6D1A5]/10 bg-[#17110E] px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-[#E9DEC7]/85"
-                  >
-                    Ver todos
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {mockFriends.map((friend, index) => (
-                    <div
-                      key={friend.name}
-                      className="flex items-center justify-between rounded-[22px] border border-[#E6D1A5]/8 bg-[#17110E] px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-11 w-11 items-center justify-center rounded-[16px] font-black text-[#1A140F] shadow-[0_10px_20px_rgba(0,0,0,0.24)] ${
-                            index === 0
-                              ? "bg-[linear-gradient(135deg,#86B64B_0%,#D9B45B_100%)]"
-                              : index === 1
-                              ? "bg-[linear-gradient(135deg,#D9B45B_0%,#C9773B_100%)]"
-                              : "bg-[linear-gradient(135deg,#4FC3A1_0%,#86B64B_100%)]"
-                          }`}
-                        >
-                          {friend.name.slice(0, 1)}
-                        </div>
-
-                        <div>
-                          <p className="text-sm font-bold text-[#FFF2DF]">{friend.name}</p>
-                          <p className="text-xs text-[#D9C8A8]/58">{friend.status}</p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="rounded-[14px] border border-[#E6D1A5]/10 bg-[#211813] px-3 py-2 text-xs font-semibold text-[#F2EAD1]/85 transition hover:bg-[#2B1F18]"
-                      >
-                        Perfil
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <FriendsPresenceCard
+              friends={friendsPresence}
+              loading={loadingPresence}
+              error={presenceError}
+              onOpenDrawer={() => setPresenceDrawerOpen(true)}
+            />
 
             <div className="overflow-hidden rounded-[30px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,rgba(38,29,22,0.96),rgba(22,17,13,0.96))] shadow-[0_22px_70px_rgba(0,0,0,0.38)]">
               <div className="border-b border-[#E6D1A5]/8 bg-[linear-gradient(90deg,rgba(79,195,161,0.10),rgba(134,182,75,0.05))] px-6 py-4">
@@ -660,7 +575,7 @@ export default function HomePage() {
                   recentDmThreads.map((thread) => (
                     <Link
                       key={thread.thread_id}
-                      href="/messages"
+                      href={`/messages?user=${thread.other_user_id}`}
                       className="block rounded-[22px] border border-[#E6D1A5]/8 bg-[#17110E] px-4 py-4 text-sm text-[#D9C8A8]/74 transition hover:bg-[#211813]"
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -683,30 +598,17 @@ export default function HomePage() {
                 )}
               </div>
             </div>
-            <div className="overflow-hidden rounded-[32px] border border-[#E6D1A5]/10 bg-[linear-gradient(180deg,rgba(36,26,20,0.96),rgba(22,17,13,0.96))] shadow-[0_22px_70px_rgba(0,0,0,0.38)]">
-              <div className="border-b border-[#E6D1A5]/8 bg-[linear-gradient(90deg,rgba(201,119,59,0.10),rgba(217,180,91,0.05))] px-6 py-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#FFD0A8]">
-                  Tablón de anuncios
-                </p>
-                <h3 className="mt-2 text-2xl font-black text-[#FFF2DF]">
-                  Notificaciones
-                </h3>
-              </div>
-
-              <div className="p-6 space-y-3">
-                {mockNotifications.map((notification, index) => (
-                  <div
-                    key={index}
-                    className="rounded-[22px] border border-[#E6D1A5]/8 bg-[#17110E] px-4 py-3 text-sm leading-6 text-[#D9C8A8]/78"
-                  >
-                    {notification}
-                  </div>
-                ))}
-              </div>
-            </div>
           </aside>
         </section>
       </div>
+
+      <FriendsPresenceDrawer
+        open={presenceDrawerOpen}
+        onClose={() => setPresenceDrawerOpen(false)}
+        friends={friendsPresence}
+        loading={loadingPresence}
+        error={presenceError}
+      />
     </main>
   );
 }
