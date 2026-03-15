@@ -1,0 +1,66 @@
+create or replace function public.ensure_character_selection_turn_started(
+  target_match_id uuid
+)
+returns timestamptz
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  started_at timestamptz;
+  current_order integer;
+  match_phase text;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión.';
+  end if;
+
+  perform 1
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.user_id = current_user_id;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  select
+    m.phase,
+    m.current_character_turn_order,
+    m.current_character_turn_started_at
+  into
+    match_phase,
+    current_order,
+    started_at
+  from public.matches m
+  where m.id = target_match_id
+  for update;
+
+  if not found then
+    raise exception 'La partida no existe.';
+  end if;
+
+  if match_phase <> 'choosing_character' then
+    return started_at;
+  end if;
+
+  if current_order is null then
+    return started_at;
+  end if;
+
+  if started_at is null then
+    started_at := now();
+
+    update public.matches
+    set current_character_turn_started_at = started_at
+    where id = target_match_id;
+  end if;
+
+  return started_at;
+end;
+$$;
+
+grant execute on function public.ensure_character_selection_turn_started(uuid) to authenticated;
