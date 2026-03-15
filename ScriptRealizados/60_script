@@ -1,0 +1,143 @@
+alter table public.lobbies
+add column if not exists game_mode text not null default 'classic_expedition';
+
+alter table public.lobbies
+drop constraint if exists lobbies_game_mode_check;
+
+alter table public.lobbies
+add constraint lobbies_game_mode_check
+check (game_mode in ('classic_expedition'));
+
+drop function if exists public.list_public_lobbies();
+
+drop function if exists public.create_lobby_safely(text);
+drop function if exists public.create_lobby_safely(text, text);
+
+create function public.create_lobby_safely(
+  target_type text,
+  target_game_mode text default 'classic_expedition'
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  existing_lobby_id uuid;
+  new_lobby_id uuid;
+  generated_room_code text;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para crear una sala.';
+  end if;
+
+  if target_type not in ('public', 'private') then
+    raise exception 'Tipo de sala inválido.';
+  end if;
+
+  if target_game_mode not in ('classic_expedition') then
+    raise exception 'Modo de expedición inválido.';
+  end if;
+
+  select lp.lobby_id
+    into existing_lobby_id
+  from public.lobby_players lp
+  join public.lobbies l
+    on l.id = lp.lobby_id
+  where lp.user_id = current_user_id
+    and l.status in ('waiting', 'in_game')
+  limit 1;
+
+  if existing_lobby_id is not null then
+    raise exception 'Ya perteneces a una sala activa. Debes salir de ella primero.';
+  end if;
+
+  if target_type = 'private' then
+    loop
+      generated_room_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
+      exit when not exists (
+        select 1
+        from public.lobbies
+        where room_code = generated_room_code
+      );
+    end loop;
+  else
+    generated_room_code := null;
+  end if;
+
+  insert into public.lobbies (
+    host_id,
+    type,
+    status,
+    room_code,
+    game_mode
+  )
+  values (
+    current_user_id,
+    target_type,
+    'waiting',
+    generated_room_code,
+    target_game_mode
+  )
+  returning id into new_lobby_id;
+
+  insert into public.lobby_players (
+    lobby_id,
+    user_id
+  )
+  values (
+    new_lobby_id,
+    current_user_id
+  );
+
+  return new_lobby_id;
+end;
+$$;
+
+create function public.list_public_lobbies()
+returns table (
+  id uuid,
+  room_code text,
+  status text,
+  created_at timestamptz,
+  host_id uuid,
+  host_username text,
+  player_count bigint,
+  game_mode text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    l.id,
+    l.room_code,
+    l.status::text,
+    l.created_at,
+    l.host_id,
+    p.username as host_username,
+    count(lp.user_id)::bigint as player_count,
+    l.game_mode
+  from public.lobbies l
+  left join public.profiles p
+    on p.id = l.host_id
+  left join public.lobby_players lp
+    on lp.lobby_id = l.id
+  where l.type = 'public'
+    and l.status = 'waiting'
+  group by
+    l.id,
+    l.room_code,
+    l.status,
+    l.created_at,
+    l.host_id,
+    p.username,
+    l.game_mode
+  order by l.created_at desc;
+$$;
+
+grant execute on function public.create_lobby_safely(text, text) to authenticated;
+grant execute on function public.list_public_lobbies() to authenticated;
