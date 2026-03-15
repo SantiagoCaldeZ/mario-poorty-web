@@ -50,6 +50,8 @@ export default function OrderSelectionScreen({
 }: OrderSelectionScreenProps) {
   const hoverAudioRef = useRef<HTMLAudioElement | null>(null);
   const randomAudioRef = useRef<HTMLAudioElement | null>(null);
+  const submitOrderRef = useRef(onSubmitOrderNumber);
+  const finalizeOrderRef = useRef(onFinalizeOrder);
 
   const calculateSecondsLeft = () => {
     const startedAtMs = new Date(startedAt).getTime();
@@ -145,7 +147,16 @@ export default function OrderSelectionScreen({
   };
 
   useEffect(() => {
-    if (orderTargetNumber !== null) {
+    submitOrderRef.current = onSubmitOrderNumber;
+  }, [onSubmitOrderNumber]);
+
+  useEffect(() => {
+    finalizeOrderRef.current = onFinalizeOrder;
+  }, [onFinalizeOrder]);
+
+
+  useEffect(() => {
+    if (orderTargetNumber !== null && !hasStartedRollingRef.current) {
       setRollingNumber(orderTargetNumber);
       setShowResolvedOrder(true);
       setIsRolling(false);
@@ -156,14 +167,12 @@ export default function OrderSelectionScreen({
     const interval = window.setInterval(() => {
       const nextSeconds = calculateSecondsLeft();
       setSecondsLeft(nextSeconds);
-
-      if (nextSeconds <= 0) {
-        setTimeExpired(true);
-      }
+      setTimeExpired(nextSeconds <= 0);
     }, 250);
 
     return () => window.clearInterval(interval);
   }, [orderTargetNumber, startedAt]);
+
 
   useEffect(() => {
     if (!timeExpired) return;
@@ -178,19 +187,15 @@ export default function OrderSelectionScreen({
 
     const timeout = window.setTimeout(async () => {
       try {
-        await onSubmitOrderNumber(randomNumber);
+        await submitOrderRef.current(randomNumber);
       } finally {
         setIsAutoSubmitting(false);
       }
     }, 300);
 
     return () => window.clearTimeout(timeout);
-  }, [
-    timeExpired,
-    iAlreadySubmittedOrder,
-    onSelectedOrderNumberChange,
-    onSubmitOrderNumber,
-  ]);
+  }, [timeExpired, iAlreadySubmittedOrder, onSelectedOrderNumberChange]);
+
 
   useEffect(() => {
     if (!timeExpired) return;
@@ -199,231 +204,426 @@ export default function OrderSelectionScreen({
 
     const start = async () => {
       hasStartedRollingRef.current = true;
+      setIsFinalizingAutomatically(true);
 
       let finalNumber = orderTargetNumber;
 
-      if (finalNumber === null) {
-        finalNumber = await onFinalizeOrder();
+      if (finalNumber === null && !hasAutoFinalizedRef.current) {
+        hasAutoFinalizedRef.current = true;
+        finalNumber = await finalizeOrderRef.current();
       }
 
       if (finalNumber !== null) {
         await runRollingSequence(finalNumber);
       }
+
+      setIsFinalizingAutomatically(false);
     };
 
     start();
-  }, [timeExpired, submittedPlayersCount, players.length, orderTargetNumber, onFinalizeOrder]);
+  }, [timeExpired, submittedPlayersCount, players.length, orderTargetNumber]);
 
   const statusText = (() => {
-    if (orderTargetNumber !== null) return "Orden definido";
-    if (isRolling) return "Definiendo número aleatorio...";
-    if (isFinalizingAutomatically || orderFinalizing) return "Calculando orden...";
-    if (isAutoSubmitting) return "Asignando número automáticamente...";
-    if (timeExpired) return "Tiempo terminado";
-    return "Esperando números";
+    if (orderTargetNumber !== null) return "Número ritual resuelto";
+    if (isRolling) return "El tótem del tiempo está decidiendo el orden...";
+    if (isFinalizingAutomatically || orderFinalizing) return "Calculando el orden final...";
+    if (isAutoSubmitting) return "Asignando un número automáticamente...";
+    if (timeExpired) return "El tiempo terminó";
+    return "La tribu aún está fijando sus números";
+  })();
+
+  const secondsProgress = Math.max(
+    0,
+    Math.min((secondsLeft / ORDER_SELECTION_SECONDS) * 100, 100)
+  );
+
+  const phaseLabel = (() => {
+    if (orderTargetNumber !== null) return "Orden sellado";
+    if (isRolling) return "Resolviendo";
+    if (timeExpired) return "Tiempo agotado";
+    return "Selección abierta";
   })();
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 px-4 py-10">
-      <div className="mx-auto max-w-6xl rounded-3xl border border-yellow-300/30 bg-white p-8 shadow-2xl">
-        <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
-          <section className="space-y-6">
-            <div>
-              <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">
-                Definición de orden
-              </h1>
-              <p className="mt-3 max-w-3xl text-gray-600">
-                Escoge un número entre 1 y 1000. Tienes 15 segundos. Si no lo fijas
-                a tiempo, el sistema te asignará uno aleatorio automáticamente.
-              </p>
-            </div>
+    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#132417_0%,#0B140D_38%,#040706_100%)] text-[#F3F8EF]">
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(123,181,90,0.08),transparent_22%,transparent_78%,rgba(226,197,117,0.06))]" />
+      <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(to_right,rgba(235,245,220,0.85)_1px,transparent_1px),linear-gradient(to_bottom,rgba(235,245,220,0.85)_1px,transparent_1px)] [background-size:42px_42px]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_14%_16%,rgba(123,181,90,0.16),transparent_18%),radial-gradient(circle_at_86%_14%,rgba(226,197,117,0.14),transparent_18%),radial-gradient(circle_at_22%_84%,rgba(79,224,167,0.09),transparent_16%)]" />
 
-            {serverError && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {serverError}
-              </div>
-            )}
+      <div className="pointer-events-none absolute left-[8%] top-[14%] h-40 w-40 rounded-full bg-[#7BB55A]/12 blur-3xl" />
+      <div className="pointer-events-none absolute right-[8%] top-[14%] h-44 w-44 rounded-full bg-[#E2C575]/10 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-[10%] left-[18%] h-36 w-36 rounded-full bg-[#4FE0A7]/8 blur-3xl" />
 
-            <div className="rounded-3xl border border-yellow-200 bg-gradient-to-br from-yellow-100 via-yellow-50 to-orange-100 p-6 shadow-sm">
-              <div className="grid items-center gap-6 md:grid-cols-[auto_1fr]">
-                <div className="flex justify-center">
-                  <Image
-                    src="/order/Reloj.gif"
-                    alt="Reloj"
-                    width={120}
-                    height={120}
-                    className="h-28 w-28 object-contain"
-                    unoptimized
-                  />
-                </div>
+      <div className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <section className="overflow-hidden rounded-[38px] border border-[#E3EDD5]/10 bg-[linear-gradient(180deg,rgba(16,25,18,0.96),rgba(8,12,9,0.98))] shadow-[0_28px_90px_rgba(0,0,0,0.45)]">
+          <div className="border-b border-[#E3EDD5]/10 bg-[linear-gradient(90deg,rgba(123,181,90,0.18),rgba(226,197,117,0.10),rgba(79,224,167,0.05))] px-6 py-5">
+            <p className="text-[11px] font-black uppercase tracking-[0.36em] text-[#CAE9B8]">
+              Ritual de orden
+            </p>
+          </div>
 
-                <div className="flex flex-col items-center text-center md:items-start md:text-left">
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-700">
-                    Número elegido aleatoriamente
-                  </p>
-
-                  <div className="mt-4 flex h-40 w-40 items-center justify-center rounded-full border-8 border-yellow-300 bg-white shadow-inner">
-                    <span className="text-5xl font-black text-gray-900">
-                      {rollingNumber ?? "?"}
+          <div className="grid gap-6 p-6 xl:grid-cols-[1.06fr_0.94fr]">
+            <section className="space-y-6">
+              <div className="overflow-hidden rounded-[34px] border border-[#E3EDD5]/10 bg-[linear-gradient(135deg,rgba(27,40,23,0.98),rgba(12,19,13,0.98))] shadow-[0_18px_45px_rgba(0,0,0,0.24)]">
+                <div className="border-b border-[#E3EDD5]/10 bg-[linear-gradient(90deg,rgba(123,181,90,0.16),rgba(226,197,117,0.08))] px-6 py-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-[#7BB55A]/16 bg-[#7BB55A]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#CAE9B8]">
+                      Fase de selección
+                    </span>
+                    <span className="rounded-full border border-[#E2C575]/16 bg-[#E2C575]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#F4E4A5]">
+                      {phaseLabel}
+                    </span>
+                    <span className="rounded-full border border-[#4FE0A7]/16 bg-[#4FE0A7]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#C8FFE5]">
+                      {submittedPlayersCount}/{players.length} listos
                     </span>
                   </div>
+                </div>
 
-                  <p className="mt-4 text-sm text-gray-600">{statusText}</p>
+                <div className="p-6">
+                  <h1 className="text-4xl font-black leading-tight text-[#FAFCEE] sm:text-5xl">
+                    Definición de
+                    <span className="bg-[linear-gradient(135deg,#E2C575_0%,#7BB55A_45%,#4FE0A7_100%)] bg-clip-text text-transparent">
+                      {" "}
+                      orden
+                    </span>
+                  </h1>
+
+                  <p className="mt-4 max-w-3xl text-base leading-7 text-[#D6E2D0]/82">
+                    Cada goblin debe fijar un número entre 1 y 1000 antes de que
+                    el reloj sagrado se agote. Si alguien no lo hace a tiempo, el
+                    ritual decidirá por él.
+                  </p>
+
+                  {serverError && (
+                    <div className="mt-5 rounded-[22px] border border-[#FFB7A7]/14 bg-[#341D16] px-4 py-4 text-sm text-[#FFD7CF]">
+                      {serverError}
+                    </div>
+                  )}
+
+                  <div className="mt-6 grid gap-5 lg:grid-cols-[0.92fr_1.08fr]">
+                    <div className="rounded-[28px] border border-[#E3EDD5]/10 bg-[#0E160F]/78 p-5">
+                      <div className="flex items-center justify-center">
+                        <Image
+                          src="/order/Reloj.gif"
+                          alt="Reloj ritual"
+                          width={150}
+                          height={150}
+                          className="h-32 w-32 object-contain drop-shadow-[0_10px_22px_rgba(0,0,0,0.22)]"
+                          unoptimized
+                        />
+                      </div>
+
+                      <div className="mt-5 rounded-[22px] border border-[#E3EDD5]/10 bg-[linear-gradient(135deg,rgba(123,181,90,0.08),rgba(15,22,16,0.92))] p-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#CAE9B8]">
+                          Tiempo restante
+                        </p>
+                        <div className="mt-3 flex items-end justify-between gap-3">
+                          <p className="text-4xl font-black text-[#FAFCEE]">
+                            {secondsLeft}s
+                          </p>
+                          <p className="text-sm font-semibold text-[#D6E2D0]/70">
+                            {timeExpired ? "Tiempo agotado" : "Reloj en curso"}
+                          </p>
+                        </div>
+
+                        <div className="mt-4 h-3 rounded-full bg-[#172119]">
+                          <div
+                            className="h-3 rounded-full bg-[linear-gradient(90deg,#E2C575_0%,#7BB55A_52%,#4FE0A7_100%)] transition-all duration-300"
+                            style={{ width: `${secondsProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[28px] border border-[#E3EDD5]/10 bg-[linear-gradient(135deg,rgba(226,197,117,0.08),rgba(15,22,16,0.95))] p-5">
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#F4E4A5]">
+                        Número ritual aleatorio
+                      </p>
+
+                      <div className="mt-5 flex flex-col items-center text-center">
+                        <div className="relative flex h-52 w-52 items-center justify-center rounded-full border-[10px] border-[#E2C575]/40 bg-[radial-gradient(circle_at_top,#F7FAF1_0%,#E7F0D8_42%,#D7E3C7_100%)] shadow-[0_0_0_10px_rgba(123,181,90,0.06),0_18px_45px_rgba(0,0,0,0.22)]">
+                          <div className="absolute inset-4 rounded-full border border-[#7BB55A]/20" />
+                          <span className="text-6xl font-black text-[#152215]">
+                            {rollingNumber ?? "?"}
+                          </span>
+                        </div>
+
+                        <p className="mt-5 text-sm leading-6 text-[#D6E2D0]/78">
+                          {statusText}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Tu número</h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Pulsa “Fijar” para confirmar tu elección.
+              <div className="overflow-hidden rounded-[34px] border border-[#E3EDD5]/10 bg-[linear-gradient(180deg,rgba(16,24,17,0.98),rgba(9,13,10,0.98))] shadow-[0_18px_45px_rgba(0,0,0,0.24)]">
+                <div className="border-b border-[#E3EDD5]/10 bg-[linear-gradient(90deg,rgba(79,224,167,0.12),rgba(123,181,90,0.08))] px-6 py-5">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#C8FFE5]">
+                        Tu elección
+                      </p>
+                      <h2 className="mt-2 text-3xl font-black text-[#FAFCEE]">
+                        Número del goblin
+                      </h2>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-[#E2C575]/16 bg-[#E2C575]/10 px-4 py-2 text-sm font-black text-[#F4E4A5]">
+                        Tiempo: {secondsLeft}s
+                      </span>
+                      <span className="rounded-full border border-[#E3EDD5]/10 bg-[#121A13] px-4 py-2 text-sm font-semibold text-[#E7F0DC]">
+                        {submittedPlayersCount} / {players.length} listos
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  {iAlreadySubmittedOrder ? (
+                    <div className="rounded-[26px] border border-[#4FE0A7]/16 bg-[linear-gradient(135deg,rgba(79,224,167,0.12),rgba(15,22,16,0.98))] p-5">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#C8FFE5]">
+                        Número fijado
+                      </p>
+                      <p className="mt-3 text-5xl font-black text-[#FAFCEE]">
+                        {myPlayer?.selected_order_number}
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-[#D6E2D0]/76">
+                        Tu número ya quedó sellado dentro del ritual. Ahora solo
+                        espera a que la tribu termine de elegir.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-sm leading-6 text-[#D6E2D0]/78">
+                        Escribe un número entero del 1 al 1000 y pulsa
+                        <span className="font-bold text-[#FAFCEE]"> Fijar</span> para
+                        confirmar tu elección.
+                      </p>
+
+                      <div className="flex flex-col gap-4 lg:flex-row">
+                        <input
+                          type="number"
+                          min={1}
+                          max={1000}
+                          value={selectedOrderNumber}
+                          onChange={(event) =>
+                            onSelectedOrderNumberChange(event.target.value)
+                          }
+                          disabled={timeExpired || orderSubmitting || isAutoSubmitting}
+                          className="w-full rounded-[24px] border-2 border-[#E2C575]/20 bg-[linear-gradient(135deg,rgba(226,197,117,0.10),rgba(15,22,16,0.98))] px-5 py-5 text-3xl font-black text-[#FAFCEE] outline-none transition placeholder:text-[#A7B29B]/44 focus:border-[#E2C575]/50 disabled:cursor-not-allowed disabled:opacity-60"
+                          placeholder="1 - 1000"
+                        />
+
+                        <button
+                          type="button"
+                          onMouseEnter={playHoverSound}
+                          onClick={handleSubmitClick}
+                          disabled={timeExpired || orderSubmitting || isAutoSubmitting}
+                          className="rounded-[24px] bg-[linear-gradient(135deg,#E2C575_0%,#9ECB63_45%,#4FE0A7_100%)] px-7 py-5 text-lg font-black uppercase tracking-[0.12em] text-[#112013] shadow-[0_16px_34px_rgba(123,181,90,0.18)] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {orderSubmitting || isAutoSubmitting ? "Fijando..." : "Fijar"}
+                        </button>
+                      </div>
+
+                      <div className="rounded-[22px] border border-[#E3EDD5]/10 bg-[#101711] px-4 py-4">
+                        <p className="text-sm leading-6 text-[#D6E2D0]/74">
+                          Si el reloj termina antes de que fijes tu número, el
+                          sistema elegirá uno aleatorio automáticamente por ti.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {showResolvedOrder && orderedPlayers.length > 0 && (
+                <div className="overflow-hidden rounded-[34px] border border-[#E3EDD5]/10 bg-[linear-gradient(180deg,rgba(18,28,20,0.98),rgba(10,14,11,0.98))] shadow-[0_18px_45px_rgba(0,0,0,0.24)]">
+                  <div className="border-b border-[#E3EDD5]/10 bg-[linear-gradient(90deg,rgba(226,197,117,0.14),rgba(79,224,167,0.08))] px-6 py-5">
+                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#F4E4A5]">
+                      Orden resultante
+                    </p>
+                    <h2 className="mt-2 text-3xl font-black text-[#FAFCEE]">
+                      La ruta quedó definida
+                    </h2>
+                  </div>
+
+                  <div className="p-6">
+                    <div className="space-y-4">
+                      {orderedPlayers.map((player, index) => {
+                        const isCurrentUser = player.user_id === currentUserId;
+                        const badgeTone =
+                          index === 0
+                            ? "border-[#E2C575]/16 bg-[#E2C575]/10 text-[#F4E4A5]"
+                            : index === 1
+                            ? "border-[#C0D7A0]/16 bg-[#C0D7A0]/10 text-[#EAF3D0]"
+                            : index === 2
+                            ? "border-[#4FE0A7]/16 bg-[#4FE0A7]/10 text-[#C8FFE5]"
+                            : "border-[#E3EDD5]/10 bg-[#131A14] text-[#E7F0DC]";
+
+                        return (
+                          <div
+                            key={player.id}
+                            className={`rounded-[24px] border px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.16)] ${
+                              isCurrentUser
+                                ? "border-[#4FE0A7]/16 bg-[linear-gradient(135deg,rgba(79,224,167,0.12),rgba(15,22,16,0.98))]"
+                                : "border-[#E3EDD5]/10 bg-[linear-gradient(135deg,rgba(226,197,117,0.05),rgba(15,22,16,0.98))]"
+                            }`}
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`rounded-full border px-4 py-2 text-sm font-black uppercase tracking-[0.12em] ${badgeTone}`}
+                                >
+                                  {player.turn_order}°
+                                </div>
+
+                                <div>
+                                  <p className="text-lg font-black text-[#FAFCEE]">
+                                    {player.username ?? "Sin username"}
+                                    {isCurrentUser ? " (Tú)" : ""}
+                                  </p>
+                                  <p className="mt-1 text-sm text-[#D6E2D0]/72">
+                                    Número elegido: {player.selected_order_number ?? "-"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {index === 0 && (
+                                <span className="rounded-full border border-[#E2C575]/16 bg-[#E2C575]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#F4E4A5]">
+                                  Primer turno
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <aside className="space-y-6">
+              <div className="overflow-hidden rounded-[34px] border border-[#E3EDD5]/10 bg-[linear-gradient(180deg,rgba(17,25,18,0.98),rgba(9,13,10,0.98))] shadow-[0_18px_45px_rgba(0,0,0,0.24)]">
+                <div className="border-b border-[#E3EDD5]/10 bg-[linear-gradient(90deg,rgba(123,181,90,0.14),rgba(79,224,167,0.08))] px-6 py-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#CAE9B8]">
+                        Tribu del ritual
+                      </p>
+                      <h2 className="mt-2 text-3xl font-black text-[#FAFCEE]">
+                        Jugadores
+                      </h2>
+                    </div>
+
+                    <div className="rounded-[18px] border border-[#7BB55A]/16 bg-[#7BB55A]/10 px-4 py-3 text-center">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#CAE9B8]">
+                        Total
+                      </p>
+                      <p className="mt-1 text-2xl font-black text-[#FAFCEE]">
+                        {players.length}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  <div className="space-y-4">
+                    {players.map((player) => {
+                      const isCurrentUser = player.user_id === currentUserId;
+                      const hasSubmitted = player.selected_order_number !== null;
+                      const playerInitial =
+                        player.username?.slice(0, 1).toUpperCase() ?? "G";
+
+                      return (
+                        <div
+                          key={player.id}
+                          className={`rounded-[24px] border px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.16)] ${
+                            isCurrentUser
+                              ? "border-[#E2C575]/18 bg-[linear-gradient(135deg,rgba(226,197,117,0.12),rgba(15,22,16,0.98))]"
+                              : "border-[#E3EDD5]/10 bg-[linear-gradient(135deg,rgba(123,181,90,0.08),rgba(15,22,16,0.98))]"
+                          }`}
+                        >
+                          <div className="flex items-start gap-4">
+                            <div
+                              className={`flex h-14 w-14 items-center justify-center rounded-[20px] text-xl font-black shadow-[0_10px_20px_rgba(0,0,0,0.22)] ${
+                                isCurrentUser
+                                  ? "bg-[linear-gradient(135deg,#E2C575_0%,#9ECB63_100%)] text-[#102012]"
+                                  : hasSubmitted
+                                  ? "bg-[linear-gradient(135deg,#4FE0A7_0%,#88F0C1_100%)] text-[#08140F]"
+                                  : "bg-[linear-gradient(135deg,#243025_0%,#3B4E3E_100%)] text-[#F2F7EA]"
+                              }`}
+                            >
+                              {playerInitial}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-lg font-black text-[#FAFCEE]">
+                                  {player.username ?? "Sin username"}
+                                  {isCurrentUser ? " (Tú)" : ""}
+                                </p>
+
+                                <span
+                                  className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                                    hasSubmitted
+                                      ? "border border-[#4FE0A7]/16 bg-[#4FE0A7]/10 text-[#C8FFE5]"
+                                      : "border border-[#E3EDD5]/10 bg-[#121912] text-[#D7E0CE]"
+                                  }`}
+                                >
+                                  {hasSubmitted ? "Listo" : "Esperando"}
+                                </span>
+                              </div>
+
+                              <p className="mt-2 text-sm text-[#D6E2D0]/72">
+                                {hasSubmitted
+                                  ? "Ya selló su número dentro del ritual."
+                                  : "Todavía no ha fijado un número."}
+                              </p>
+
+                              {hasSubmitted && (
+                                <div className="mt-3 rounded-[18px] border border-[#E3EDD5]/10 bg-[#111811] px-3 py-3 text-sm text-[#E7F0DC]">
+                                  <span className="font-bold">Número elegido:</span>{" "}
+                                  {player.selected_order_number}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-[34px] border border-[#E3EDD5]/10 bg-[linear-gradient(180deg,rgba(17,25,18,0.98),rgba(9,13,10,0.98))] shadow-[0_18px_45px_rgba(0,0,0,0.24)]">
+                <div className="border-b border-[#E3EDD5]/10 bg-[linear-gradient(90deg,rgba(79,224,167,0.12),rgba(123,181,90,0.08))] px-6 py-5">
+                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#C8FFE5]">
+                    Acciones del campamento
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="rounded-full bg-red-100 px-4 py-2 text-sm font-bold text-red-700">
-                    Tiempo: {secondsLeft}s
-                  </div>
-
-                  <div className="rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700">
-                    {submittedPlayersCount} / {players.length} listos
-                  </div>
-                </div>
-              </div>
-
-              {iAlreadySubmittedOrder ? (
-                <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 px-4 py-4">
-                  <p className="text-sm text-green-700">Ya fijaste tu número.</p>
-                  <p className="mt-1 text-3xl font-black text-green-800">
-                    {myPlayer?.selected_order_number}
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-6 flex flex-col gap-4 lg:flex-row">
-                  <input
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={selectedOrderNumber}
-                    onChange={(event) => onSelectedOrderNumberChange(event.target.value)}
-                    disabled={timeExpired || orderSubmitting || isAutoSubmitting}
-                    className="w-full rounded-2xl border-2 border-yellow-200 bg-yellow-50 px-5 py-4 text-2xl font-bold text-gray-900 outline-none transition focus:border-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
-                    placeholder="1 - 1000"
-                  />
-
+                <div className="p-6">
                   <button
                     type="button"
                     onMouseEnter={playHoverSound}
-                    onClick={handleSubmitClick}
-                    disabled={timeExpired || orderSubmitting || isAutoSubmitting}
-                    className="rounded-2xl bg-black px-6 py-4 text-lg font-bold text-white transition hover:scale-[1.02] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={onGoHome}
+                    className="rounded-[22px] border border-[#E3EDD5]/10 bg-[#121912] px-5 py-4 text-sm font-black uppercase tracking-[0.12em] text-[#F2F7EA] transition hover:bg-[#182019]"
                   >
-                    {orderSubmitting || isAutoSubmitting ? "Fijando..." : "Fijar"}
+                    Volver al inicio
                   </button>
-                </div>
-              )}
-            </div>
 
-            {showResolvedOrder && orderedPlayers.length > 0 && (
-              <div className="rounded-3xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
-                <h2 className="text-2xl font-bold text-blue-900">Orden resultante</h2>
-                <div className="mt-4 space-y-3">
-                  {orderedPlayers.map((player) => (
-                    <div
-                      key={player.id}
-                      className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 text-sm text-gray-800"
-                    >
-                      <p className="font-semibold">
-                        {player.turn_order}. {player.username ?? "Sin username"}
-                        {player.user_id === currentUserId ? " (Tú)" : ""}
-                      </p>
-                      <p className="text-gray-600">
-                        Número: {player.selected_order_number ?? "-"}
-                      </p>
-                    </div>
-                  ))}
+                  <p className="mt-4 text-sm leading-6 text-[#D6E2D0]/74">
+                    Cuando el tiempo termine, el ritual finalizará automáticamente
+                    y el sistema definirá el orden de turnos para toda la tribu.
+                  </p>
                 </div>
               </div>
-            )}
-          </section>
-
-          <aside className="space-y-6">
-            <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-900">Jugadores</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Estado actual de la selección de orden.
-              </p>
-
-              <div className="mt-5 space-y-3">
-                {players.map((player) => {
-                  const isCurrentUser = player.user_id === currentUserId;
-                  const hasSubmitted = player.selected_order_number !== null;
-
-                  return (
-                    <div
-                      key={player.id}
-                      className={`rounded-2xl border px-4 py-4 transition ${
-                        isCurrentUser
-                          ? "border-yellow-300 bg-yellow-50"
-                          : "border-gray-200 bg-gray-50"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-gray-900">
-                            {player.username ?? "Sin username"}
-                            {isCurrentUser ? " (Tú)" : ""}
-                          </p>
-                          <p className="mt-1 text-sm text-gray-600">
-                            {hasSubmitted ? "Ya eligió número" : "Pendiente"}
-                          </p>
-                        </div>
-
-                        <div
-                          className={`rounded-full px-3 py-1 text-xs font-bold ${
-                            hasSubmitted
-                              ? "bg-green-100 text-green-700"
-                              : "bg-gray-200 text-gray-700"
-                          }`}
-                        >
-                          {hasSubmitted ? "Listo" : "Esperando"}
-                        </div>
-                      </div>
-
-                      {hasSubmitted && (
-                        <div className="mt-3 rounded-xl bg-white px-3 py-2 text-sm text-gray-700">
-                          <span className="font-semibold">Número elegido:</span>{" "}
-                          {player.selected_order_number}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-bold text-gray-900">Acciones</h2>
-
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onMouseEnter={playHoverSound}
-                  onClick={onGoHome}
-                  className="rounded-2xl border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-900 transition hover:bg-gray-50"
-                >
-                  Volver al inicio
-                </button>
-              </div>
-
-              <p className="mt-4 text-sm text-gray-600">
-                Cuando el tiempo termine, el sistema definirá el orden automáticamente.
-              </p>
-            </div>
-          </aside>
-        </div>
+            </aside>
+          </div>
+        </section>
       </div>
     </main>
   );

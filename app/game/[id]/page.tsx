@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import GameBoard from "@/components/game/GameBoard";
@@ -9,6 +9,7 @@ import MatchSummary from "@/components/game/MatchSummary";
 import PlayersPanel from "@/components/game/PlayersPanel";
 import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
 import OrderSelectionScreen from "@/components/game/OrderSelectionScreen";
+import CharacterRevealScreen from "@/components/game/CharacterRevealScreen";
 
 type MatchData = {
   id: string;
@@ -22,6 +23,7 @@ type MatchData = {
   started_at: string;
   finished_at: string | null;
   current_character_turn_order: number | null;
+  current_character_turn_started_at: string | null;
 };
 
 type MatchPlayerRow = {
@@ -56,6 +58,8 @@ export default function GamePage() {
   const params = useParams();
   const router = useRouter();
 
+  const lobbyId = typeof params.id === "string" ? params.id : null;
+
   const [loading, setLoading] = useState(true);
   const [serverError, setServerError] = useState("");
   const [turnMessage, setTurnMessage] = useState("");
@@ -68,20 +72,84 @@ export default function GamePage() {
   const [selectionSubmitting, setSelectionSubmitting] = useState(false);
   const [selectingCharacter, setSelectingCharacter] = useState<string | null>(null);
 
-  useEffect(() => {
-    const lobbyId = params.id;
+  const [characterRevealState, setCharacterRevealState] = useState<"hidden" | "showing">(
+    "hidden"
+  );
 
-    if (!lobbyId || typeof lobbyId !== "string") {
-      setServerError("ID de partida inválido.");
-      setLoading(false);
-      return;
+  const myPlayer = players.find((player) => player.user_id === currentUserId) ?? null;
+  const myChosenCharacterName = myPlayer?.character_name ?? null;
+
+  const activeMatchIdRef = useRef<string | null>(null);
+
+  const selectedOrderNumberRef = useRef(selectedOrderNumber);
+
+  useEffect(() => {
+    selectedOrderNumberRef.current = selectedOrderNumber;
+  }, [selectedOrderNumber]);
+
+
+  const loadPlayersSnapshot = useCallback(async (matchId: string) => {
+    const { data: playerData, error: playerError } = await supabase
+      .from("match_players")
+      .select(
+        "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at, selected_order_number, order_number_submitted_at"
+      )
+      .eq("match_id", matchId)
+      .order("turn_order", { ascending: true });
+
+    if (playerError) {
+      setServerError(playerError.message);
+      return null;
     }
 
-    let isMounted = true;
-    let activeMatchId: string | null = null;
+    const userIds = (playerData ?? []).map((player) => player.user_id);
 
-    const loadGame = async (showLoading = false) => {
-      if (showLoading && isMounted) {
+    const { data: profileData, error: profileError } = await supabase.rpc(
+      "get_public_profiles",
+      { profile_ids: userIds }
+    );
+
+    if (profileError) {
+      setServerError(profileError.message);
+      return null;
+    }
+
+    const publicProfiles = (profileData ?? []) as PublicProfileRow[];
+
+    const profilesMap = new Map(
+      publicProfiles.map((profile) => [profile.id, profile])
+    );
+
+    const mergedPlayers: MatchPlayerRow[] = (playerData ?? []).map((player) => {
+      const profile = profilesMap.get(player.user_id);
+
+      return {
+        id: player.id,
+        match_id: player.match_id,
+        user_id: player.user_id,
+        character_name: player.character_name,
+        turn_order: player.turn_order,
+        board_position: player.board_position,
+        is_finished: player.is_finished,
+        joined_at: player.joined_at,
+        selected_order_number: player.selected_order_number,
+        order_number_submitted_at: player.order_number_submitted_at,
+        username: profile?.username ?? null,
+      };
+    });
+
+    return mergedPlayers;
+  }, []);
+
+  const loadGame = useCallback(
+    async (showLoading = false) => {
+      if (!lobbyId) {
+        setServerError("ID de partida inválido.");
+        setLoading(false);
+        return;
+      }
+
+      if (showLoading) {
         setLoading(true);
       }
 
@@ -97,24 +165,19 @@ export default function GamePage() {
       }
 
       const userId = session.user.id;
-
-      if (isMounted) {
-        setCurrentUserId(userId);
-      }
+      setCurrentUserId(userId);
 
       const { data: matchData, error: matchError } = await supabase
         .from("matches")
         .select(
-          "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
+          "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_character_turn_started_at, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
         )
         .eq("lobby_id", lobbyId)
         .maybeSingle();
 
       if (matchError) {
-        if (isMounted) {
-          setServerError(matchError.message);
-          setLoading(false);
-        }
+        setServerError(matchError.message);
+        setLoading(false);
         return;
       }
 
@@ -126,18 +189,14 @@ export default function GamePage() {
           .maybeSingle();
 
         if (lobbyError) {
-          if (isMounted) {
-            setServerError(lobbyError.message);
-            setLoading(false);
-          }
+          setServerError(lobbyError.message);
+          setLoading(false);
           return;
         }
 
         if (!lobbyData) {
-          if (isMounted) {
-            setServerError("La partida no existe.");
-            setLoading(false);
-          }
+          setServerError("La partida no existe.");
+          setLoading(false);
           return;
         }
 
@@ -151,14 +210,12 @@ export default function GamePage() {
           return;
         }
 
-        if (isMounted) {
-          setServerError("La partida todavía no ha sido creada correctamente.");
-          setLoading(false);
-        }
+        setServerError("La partida todavía no ha sido creada correctamente.");
+        setLoading(false);
         return;
       }
 
-      activeMatchId = matchData.id;
+      activeMatchIdRef.current = matchData.id;
 
       const { data: membership, error: membershipError } = await supabase
         .from("match_players")
@@ -168,10 +225,8 @@ export default function GamePage() {
         .maybeSingle();
 
       if (membershipError) {
-        if (isMounted) {
-          setServerError("No se pudo validar tu acceso a la partida.");
-          setLoading(false);
-        }
+        setServerError("No se pudo validar tu acceso a la partida.");
+        setLoading(false);
         return;
       }
 
@@ -180,69 +235,35 @@ export default function GamePage() {
         return;
       }
 
-      const { data: playerData, error: playerError } = await supabase
-        .from("match_players")
-        .select(
-          "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at, selected_order_number, order_number_submitted_at"
-        )
-        .eq("match_id", matchData.id)
-        .order("turn_order", { ascending: true });
+      const mergedPlayers = await loadPlayersSnapshot(matchData.id);
 
-      if (playerError) {
-        if (isMounted) {
-          setServerError(playerError.message);
-          setLoading(false);
-        }
-        return;
-      }
-
-      const userIds = (playerData ?? []).map((player) => player.user_id);
-
-      const { data: profileData, error: profileError } = await supabase.rpc(
-        "get_public_profiles",
-        { profile_ids: userIds }
-      );
-
-      if (profileError) {
-        if (isMounted) {
-          setServerError(profileError.message);
-          setLoading(false);
-        }
-        return;
-      }
-
-      const publicProfiles = (profileData ?? []) as PublicProfileRow[];
-
-      const profilesMap = new Map(
-        publicProfiles.map((profile) => [profile.id, profile])
-      );
-
-      const mergedPlayers: MatchPlayerRow[] = (playerData ?? []).map((player) => {
-        const profile = profilesMap.get(player.user_id);
-
-        return {
-          id: player.id,
-          match_id: player.match_id,
-          user_id: player.user_id,
-          character_name: player.character_name,
-          turn_order: player.turn_order,
-          board_position: player.board_position,
-          is_finished: player.is_finished,
-          joined_at: player.joined_at,
-          selected_order_number: player.selected_order_number,
-          order_number_submitted_at: player.order_number_submitted_at,
-          username: profile?.username ?? null,
-        };
-      });
-
-      if (isMounted) {
-        setMatch(matchData);
-        setPlayers(mergedPlayers);
+      if (!mergedPlayers) {
         setLoading(false);
+        return;
       }
+
+      setMatch(matchData);
+      setPlayers(mergedPlayers);
+      setLoading(false);
+    },
+    [lobbyId, loadPlayersSnapshot, router]
+  );
+
+  useEffect(() => {
+    if (!lobbyId) {
+      setServerError("ID de partida inválido.");
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const init = async () => {
+      if (cancelled) return;
+      await loadGame(true);
     };
 
-    loadGame(true);
+    init();
 
     const lobbyChannel = supabase
       .channel(`game-lobby-${lobbyId}`)
@@ -278,8 +299,8 @@ export default function GamePage() {
           const oldRow = payload.old as { match_id?: string } | undefined;
 
           if (
-            (activeMatchId && newRow?.match_id === activeMatchId) ||
-            (activeMatchId && oldRow?.match_id === activeMatchId)
+            (activeMatchIdRef.current && newRow?.match_id === activeMatchIdRef.current) ||
+            (activeMatchIdRef.current && oldRow?.match_id === activeMatchIdRef.current)
           ) {
             await loadGame(false);
           }
@@ -288,18 +309,79 @@ export default function GamePage() {
       .subscribe();
 
     return () => {
-      isMounted = false;
+      cancelled = true;
       supabase.removeChannel(lobbyChannel);
       supabase.removeChannel(playersChannel);
     };
-  }, [params.id, router]);
+  }, [lobbyId, loadGame]);
+
+  useEffect(() => {
+    if (!match?.id) return;
+    if (match.phase !== "choosing_character") return;
+    if (match.current_character_turn_order === null) return;
+    if (match.current_character_turn_started_at) return;
+
+    let cancelled = false;
+
+    const ensureStarted = async () => {
+      const { data, error } = await supabase.rpc(
+        "ensure_character_selection_turn_started",
+        {
+          target_match_id: match.id,
+        }
+      );
+
+      if (cancelled) return;
+
+      if (error) {
+        setServerError(error.message);
+        return;
+      }
+
+      if (data) {
+        setMatch((prev) =>
+          prev
+            ? {
+                ...prev,
+                current_character_turn_started_at: data as string,
+              }
+            : prev
+        );
+      }
+    };
+
+    ensureStarted();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    match?.id,
+    match?.phase,
+    match?.current_character_turn_order,
+    match?.current_character_turn_started_at,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!match?.id || !currentUserId || match.phase !== "active" || !myChosenCharacterName) {
+      setCharacterRevealState("hidden");
+      return;
+    }
+
+    const storageKey = `pwg-character-reveal:${match.id}:${currentUserId}`;
+    const alreadyShown = window.sessionStorage.getItem(storageKey) === "1";
+
+    setCharacterRevealState(alreadyShown ? "hidden" : "showing");
+  }, [match?.id, match?.phase, currentUserId, myChosenCharacterName]);
 
   const currentTurnPlayer = players.find(
     (player) => player.user_id === match?.current_turn_user_id
   );
+
   const winnerPlayer = players.find(
     (player) => player.user_id === match?.winner_user_id
   );
+
   const isMyTurn = currentUserId === match?.current_turn_user_id;
   const currentMatchId = match?.id ?? null;
 
@@ -334,82 +416,16 @@ export default function GamePage() {
       }
     }
 
-    const { data: updatedMatch, error: updatedMatchError } = await supabase
-      .from("matches")
-      .select(
-        "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
-      )
-      .eq("id", currentMatchId)
-      .maybeSingle();
-
-    if (updatedMatchError) {
-      setServerError(updatedMatchError.message);
-      return;
-    }
-
-    const { data: updatedPlayers, error: updatedPlayersError } = await supabase
-      .from("match_players")
-      .select(
-        "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at, selected_order_number, order_number_submitted_at"
-      )
-      .eq("match_id", currentMatchId)
-      .order("turn_order", { ascending: true });
-
-    if (updatedPlayersError) {
-      setServerError(updatedPlayersError.message);
-      return;
-    }
-
-    const userIds = (updatedPlayers ?? []).map((player) => player.user_id);
-
-    const { data: updatedProfiles, error: updatedProfilesError } = await supabase.rpc(
-      "get_public_profiles",
-      { profile_ids: userIds }
-    );
-
-    if (updatedProfilesError) {
-      setServerError(updatedProfilesError.message);
-      return;
-    }
-
-    const publicProfiles = (updatedProfiles ?? []) as PublicProfileRow[];
-
-    const profilesMap = new Map(
-      publicProfiles.map((profile) => [profile.id, profile])
-    );
-
-    const mergedPlayers: MatchPlayerRow[] = (updatedPlayers ?? []).map((player) => {
-      const profile = profilesMap.get(player.user_id);
-
-      return {
-        id: player.id,
-        match_id: player.match_id,
-        user_id: player.user_id,
-        character_name: player.character_name,
-        turn_order: player.turn_order,
-        board_position: player.board_position,
-        is_finished: player.is_finished,
-        joined_at: player.joined_at,
-        selected_order_number: player.selected_order_number,
-        order_number_submitted_at: player.order_number_submitted_at,
-        username: profile?.username ?? null,
-      };
-    });
-
-    if (updatedMatch) {
-      setMatch(updatedMatch);
-    }
-
-    setPlayers(mergedPlayers);
+    await loadGame(false);
   };
 
-  const handleSubmitOrderNumber = async (forcedNumber?: number) => {
+  const handleSubmitOrderNumber = useCallback(async (forcedNumber?: number) => {
     if (!match?.id) return;
 
     const parsedNumber =
       typeof forcedNumber === "number"
         ? forcedNumber
-        : Number(selectedOrderNumber);
+        : Number(selectedOrderNumberRef.current);
 
     if (!Number.isInteger(parsedNumber) || parsedNumber < 1 || parsedNumber > 1000) {
       setServerError("Debes ingresar un número entero entre 1 y 1000.");
@@ -431,22 +447,29 @@ export default function GamePage() {
       return;
     }
 
-    setPlayers((prev) =>
-      prev.map((player) =>
-        player.user_id === currentUserId
-          ? {
-              ...player,
-              selected_order_number: parsedNumber,
-              order_number_submitted_at: new Date().toISOString(),
-            }
-          : player
-      )
-    );
+    const refreshedPlayers = await loadPlayersSnapshot(match.id);
+
+    if (refreshedPlayers) {
+      setPlayers(refreshedPlayers);
+    } else {
+      setPlayers((prev) =>
+        prev.map((player) =>
+          player.user_id === currentUserId
+            ? {
+                ...player,
+                selected_order_number: parsedNumber,
+                order_number_submitted_at: new Date().toISOString(),
+              }
+            : player
+        )
+      );
+    }
 
     setSelectedOrderNumber("");
-  };
+  }, [currentUserId, loadPlayersSnapshot, match?.id]);
 
-  const handleFinalizeOrder = async (): Promise<number | null> => {
+
+  const handleFinalizeOrder = useCallback(async (): Promise<number | null> => {
     if (!match?.id) return null;
 
     setServerError("");
@@ -465,14 +488,20 @@ export default function GamePage() {
 
     const result = Array.isArray(data) ? data[0] : data;
 
+    const refreshedPlayers = await loadPlayersSnapshot(match.id);
+
+    if (refreshedPlayers) {
+      setPlayers(refreshedPlayers);
+    }
+
     setTimeout(() => {
       window.location.reload();
     }, 12010);
 
     return result?.target_number ?? null;
-  };
+  }, [loadPlayersSnapshot, match?.id]);
 
-  const handleSelectCharacter = async (characterName: string) => {
+  const handleSelectCharacter = useCallback(async (characterName: string) => {
     if (!match?.id) return;
 
     setServerError("");
@@ -492,12 +521,60 @@ export default function GamePage() {
       return;
     }
 
-    window.location.reload();
-  };
+    await loadGame(false);
+  }, [loadGame, match?.id]);
+
+
+  const handleAutoSelectCharacter = useCallback(async (): Promise<"ok" | "retry"> => {
+    if (!match?.id) return "retry";
+
+    setServerError("");
+    setSelectionSubmitting(true);
+    setSelectingCharacter("__AUTO__");
+
+    const { error } = await supabase.rpc("auto_select_character", {
+      target_match_id: match.id,
+    });
+
+    setSelectionSubmitting(false);
+    setSelectingCharacter(null);
+
+    if (!error) {
+      await loadGame(false);
+      return "ok";
+    }
+
+    if (error.message === "El tiempo de selección aún no terminó.") {
+      return "retry";
+    }
+
+    const ignorableMessages = [
+      "La partida no está en fase de selección de personajes.",
+      "No hay un turno de selección de personaje definido.",
+      "El jugador actual ya tiene un personaje asignado.",
+    ];
+
+    if (ignorableMessages.includes(error.message)) {
+      await loadGame(false);
+      return "ok";
+    }
+
+    setServerError(error.message);
+    return "ok";
+  }, [loadGame, match?.id]);
+
+  const handleCharacterRevealDone = useCallback(() => {
+    if (match?.id && currentUserId) {
+      const storageKey = `pwg-character-reveal:${match.id}:${currentUserId}`;
+      window.sessionStorage.setItem(storageKey, "1");
+    }
+
+    setCharacterRevealState("hidden");
+  }, [match?.id, currentUserId]);
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+      <main className="flex min-h-screen items-center justify-center bg-gray-100 px-4">
         <p className="text-gray-700">Cargando partida...</p>
       </main>
     );
@@ -528,9 +605,11 @@ export default function GamePage() {
         players={players}
         currentUserId={currentUserId}
         currentCharacterTurnOrder={match.current_character_turn_order}
+        currentCharacterTurnStartedAt={match.current_character_turn_started_at}
         orderTargetNumber={match.order_target_number}
         selectingCharacter={selectingCharacter}
         onSelectCharacter={handleSelectCharacter}
+        onAutoSelectCharacter={handleAutoSelectCharacter}
         onGoHome={() => router.push("/home")}
         selectionSubmitting={selectionSubmitting}
         serverError={serverError}
@@ -538,9 +617,23 @@ export default function GamePage() {
     );
   }
 
+  if (
+    match?.phase === "active" &&
+    characterRevealState === "showing" &&
+    myChosenCharacterName
+  ) {
+    return (
+      <CharacterRevealScreen
+        characterName={myChosenCharacterName}
+        onDone={handleCharacterRevealDone}
+        durationMs={4000}
+      />
+    );
+  }
+
   if (serverError) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+      <main className="flex min-h-screen items-center justify-center bg-gray-100 px-4">
         <div className="w-full max-w-xl rounded-2xl bg-white p-8 shadow-md">
           <h1 className="text-2xl font-bold text-gray-900">Partida</h1>
           <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
