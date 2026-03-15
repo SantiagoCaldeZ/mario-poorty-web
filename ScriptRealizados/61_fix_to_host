@@ -1,0 +1,96 @@
+drop function if exists public.create_lobby_safely(text);
+drop function if exists public.create_lobby_safely(text, text);
+
+create function public.create_lobby_safely(
+  target_type text,
+  target_game_mode text default 'classic_expedition'
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  existing_lobby_id uuid;
+  new_lobby_id uuid;
+  generated_room_code text;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para crear una sala.';
+  end if;
+
+  if target_type not in ('public', 'private') then
+    raise exception 'Tipo de sala inválido.';
+  end if;
+
+  if target_game_mode not in ('classic_expedition') then
+    raise exception 'Modo de expedición inválido.';
+  end if;
+
+  select lp.lobby_id
+    into existing_lobby_id
+  from public.lobby_players lp
+  join public.lobbies l
+    on l.id = lp.lobby_id
+  where lp.user_id = current_user_id
+    and l.status in ('waiting', 'in_game')
+  limit 1;
+
+  if existing_lobby_id is not null then
+    raise exception 'Ya perteneces a una sala activa. Debes salir de ella primero.';
+  end if;
+
+  if target_type = 'private' then
+    loop
+      generated_room_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
+      exit when not exists (
+        select 1
+        from public.lobbies
+        where room_code = generated_room_code
+      );
+    end loop;
+  else
+    generated_room_code := null;
+  end if;
+
+  insert into public.lobbies (
+    host_id,
+    type,
+    status,
+    room_code,
+    game_mode
+  )
+  values (
+    current_user_id,
+    target_type,
+    'waiting',
+    generated_room_code,
+    target_game_mode
+  )
+  returning id into new_lobby_id;
+
+  insert into public.lobby_players (
+    lobby_id,
+    user_id,
+    is_host
+  )
+  values (
+    new_lobby_id,
+    current_user_id,
+    true
+  );
+
+  return new_lobby_id;
+end;
+$$;
+
+update public.lobby_players lp
+set is_host = true
+from public.lobbies l
+where l.id = lp.lobby_id
+  and l.host_id = lp.user_id;
+
+grant execute on function public.create_lobby_safely(text, text) to authenticated;
