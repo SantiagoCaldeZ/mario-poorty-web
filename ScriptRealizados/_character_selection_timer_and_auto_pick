@@ -1,0 +1,461 @@
+alter table public.matches
+add column if not exists current_character_turn_started_at timestamptz;
+
+update public.matches
+set current_character_turn_started_at = coalesce(current_character_turn_started_at, now())
+where phase = 'choosing_character'
+  and current_character_turn_order is not null;
+
+create or replace function public.finalize_turn_order(
+  target_match_id uuid
+)
+returns table (
+  target_number integer,
+  first_turn_user_id uuid
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  match_phase text;
+  final_number integer;
+  first_user uuid;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para finalizar el orden.';
+  end if;
+
+  perform 1
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.user_id = current_user_id;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  select m.phase
+  into match_phase
+  from public.matches m
+  where m.id = target_match_id
+  for update;
+
+  if not found then
+    raise exception 'La partida no existe.';
+  end if;
+
+  if match_phase = 'choosing_character' or match_phase = 'active' then
+    return query
+    select
+      m.order_target_number,
+      (
+        select mp.user_id
+        from public.match_players mp
+        where mp.match_id = m.id
+          and mp.turn_order = 1
+      )
+    from public.matches m
+    where m.id = target_match_id;
+
+    return;
+  end if;
+
+  if match_phase <> 'choosing_order' then
+    raise exception 'La partida no está en fase de selección de orden.';
+  end if;
+
+  update public.match_players
+  set
+    selected_order_number = floor(random() * 1000 + 1)::int,
+    order_number_submitted_at = coalesce(order_number_submitted_at, now())
+  where match_id = target_match_id
+    and selected_order_number is null;
+
+  final_number := floor(random() * 1000 + 1)::int;
+
+  with ranked as (
+    select
+      mp.id,
+      row_number() over (
+        order by
+          abs(mp.selected_order_number - final_number),
+          mp.selected_order_number,
+          mp.joined_at,
+          mp.user_id
+      ) as new_turn_order
+    from public.match_players mp
+    where mp.match_id = target_match_id
+  )
+  update public.match_players mp
+  set turn_order = ranked.new_turn_order
+  from ranked
+  where mp.id = ranked.id;
+
+  select mp.user_id
+  into first_user
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.turn_order = 1;
+
+  update public.matches
+  set
+    phase = 'choosing_character',
+    status = 'active',
+    order_target_number = final_number,
+    current_character_turn_order = 1,
+    current_character_turn_started_at = now(),
+    current_turn_user_id = null,
+    turn_number = 0
+  where id = target_match_id;
+
+  return query
+  select
+    final_number,
+    first_user;
+end;
+$$;
+
+grant execute on function public.finalize_turn_order(uuid) to authenticated;
+
+create or replace function public.select_character(
+  target_match_id uuid,
+  chosen_character text
+)
+returns table (
+  picked_character text,
+  next_character_turn_order integer,
+  selection_finished boolean,
+  first_turn_user_id uuid
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  match_phase text;
+  current_character_order integer;
+  player_turn_order integer;
+  already_selected_character text;
+  total_players integer;
+  selected_players integer;
+  next_order integer;
+  first_user uuid;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para escoger personaje.';
+  end if;
+
+  if chosen_character is null or btrim(chosen_character) = '' then
+    raise exception 'Debes escoger un personaje válido.';
+  end if;
+
+  chosen_character := btrim(chosen_character);
+
+  select
+    m.phase,
+    m.current_character_turn_order
+  into
+    match_phase,
+    current_character_order
+  from public.matches m
+  where m.id = target_match_id
+  for update;
+
+  if not found then
+    raise exception 'La partida no existe.';
+  end if;
+
+  if match_phase <> 'choosing_character' then
+    raise exception 'La partida no está en fase de selección de personajes.';
+  end if;
+
+  if current_character_order is null then
+    raise exception 'No hay un turno de selección de personaje definido.';
+  end if;
+
+  select
+    mp.turn_order,
+    mp.character_name
+  into
+    player_turn_order,
+    already_selected_character
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.user_id = current_user_id;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  if player_turn_order <> current_character_order then
+    raise exception 'No es tu turno para escoger personaje.';
+  end if;
+
+  if already_selected_character is not null then
+    raise exception 'Ya escogiste personaje.';
+  end if;
+
+  perform 1
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and lower(mp.character_name) = lower(chosen_character);
+
+  if found then
+    raise exception 'Ese personaje ya fue escogido por otro jugador.';
+  end if;
+
+  update public.match_players
+  set character_name = chosen_character
+  where match_id = target_match_id
+    and user_id = current_user_id;
+
+  select count(*)
+  into total_players
+  from public.match_players
+  where match_id = target_match_id;
+
+  select count(*)
+  into selected_players
+  from public.match_players
+  where match_id = target_match_id
+    and character_name is not null;
+
+  if selected_players = total_players then
+    select mp.user_id
+    into first_user
+    from public.match_players mp
+    where mp.match_id = target_match_id
+      and mp.turn_order = 1;
+
+    update public.matches
+    set
+      phase = 'active',
+      current_character_turn_order = null,
+      current_character_turn_started_at = null,
+      current_turn_user_id = first_user,
+      turn_number = 1
+    where id = target_match_id;
+
+    return query
+    select
+      chosen_character,
+      null::integer,
+      true,
+      first_user;
+
+    return;
+  end if;
+
+  next_order := current_character_order + 1;
+
+  update public.matches
+  set
+    current_character_turn_order = next_order,
+    current_character_turn_started_at = now()
+  where id = target_match_id;
+
+  return query
+  select
+    chosen_character,
+    next_order,
+    false,
+    null::uuid;
+end;
+$$;
+
+grant execute on function public.select_character(uuid, text) to authenticated;
+
+drop function if exists public.auto_select_character(uuid);
+
+create or replace function public.auto_select_character(
+  target_match_id uuid
+)
+returns table (
+  picked_character text,
+  assigned_user_id uuid,
+  next_character_turn_order integer,
+  selection_finished boolean,
+  first_turn_user_id uuid
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  current_character_order integer;
+  character_started_at timestamptz;
+  current_picker_user_id uuid;
+  already_selected_character text;
+  total_players integer;
+  selected_players integer;
+  next_order integer;
+  first_user uuid;
+  auto_character text;
+  available_characters text[] := array[
+    'Blitz El Inventor',
+    'Eco El Pequeño',
+    'Fang El Sigiloso',
+    'Grom El Guerrero',
+    'Krag El Titán',
+    'Lali La Traviesa',
+    'Lira La Cantora',
+    'Luna La Mística',
+    'Nova La Bombardera',
+    'Rix El Loco',
+    'Spike El Pincho',
+    'Vexa La Hechicera',
+    'Zara La Veloz',
+    'Zark El Tanque'
+  ];
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para autoasignar personaje.';
+  end if;
+
+  perform 1
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.user_id = current_user_id;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  select
+    m.current_character_turn_order,
+    m.current_character_turn_started_at
+  into
+    current_character_order,
+    character_started_at
+  from public.matches m
+  where m.id = target_match_id
+    and m.phase = 'choosing_character'
+  for update;
+
+  if not found then
+    raise exception 'La partida no está en fase de selección de personajes.';
+  end if;
+
+  if current_character_order is null then
+    raise exception 'No hay un turno de selección de personaje definido.';
+  end if;
+
+  if character_started_at is null then
+    character_started_at := now();
+
+    update public.matches
+    set current_character_turn_started_at = character_started_at
+    where id = target_match_id;
+  end if;
+
+  if now() < character_started_at + interval '15 seconds' then
+    raise exception 'El tiempo de selección aún no terminó.';
+  end if;
+
+  select
+    mp.user_id,
+    mp.character_name
+  into
+    current_picker_user_id,
+    already_selected_character
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.turn_order = current_character_order
+  for update;
+
+  if not found then
+    raise exception 'No se encontró al jugador que debe escoger ahora.';
+  end if;
+
+  if already_selected_character is not null then
+    raise exception 'El jugador actual ya tiene un personaje asignado.';
+  end if;
+
+  select c
+  into auto_character
+  from unnest(available_characters) as c
+  where not exists (
+    select 1
+    from public.match_players mp
+    where mp.match_id = target_match_id
+      and lower(mp.character_name) = lower(c)
+  )
+  order by random()
+  limit 1;
+
+  if auto_character is null then
+    raise exception 'No quedan personajes disponibles para asignar.';
+  end if;
+
+  update public.match_players
+  set character_name = auto_character
+  where match_id = target_match_id
+    and user_id = current_picker_user_id;
+
+  select count(*)
+  into total_players
+  from public.match_players
+  where match_id = target_match_id;
+
+  select count(*)
+  into selected_players
+  from public.match_players
+  where match_id = target_match_id
+    and character_name is not null;
+
+  if selected_players = total_players then
+    select mp.user_id
+    into first_user
+    from public.match_players mp
+    where mp.match_id = target_match_id
+      and mp.turn_order = 1;
+
+    update public.matches
+    set
+      phase = 'active',
+      current_character_turn_order = null,
+      current_character_turn_started_at = null,
+      current_turn_user_id = first_user,
+      turn_number = 1
+    where id = target_match_id;
+
+    return query
+    select
+      auto_character,
+      current_picker_user_id,
+      null::integer,
+      true,
+      first_user;
+
+    return;
+  end if;
+
+  next_order := current_character_order + 1;
+
+  update public.matches
+  set
+    current_character_turn_order = next_order,
+    current_character_turn_started_at = now()
+  where id = target_match_id;
+
+  return query
+  select
+    auto_character,
+    current_picker_user_id,
+    next_order,
+    false,
+    null::uuid;
+end;
+$$;
+
+grant execute on function public.auto_select_character(uuid) to authenticated;
