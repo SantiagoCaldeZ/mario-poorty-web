@@ -1,3 +1,5 @@
+"use client";
+
 type MatchData = {
   id: string;
   lobby_id: string;
@@ -11,22 +13,14 @@ type MatchData = {
   finished_at: string | null;
 };
 
-type MatchPlayerRow = {
-  id: string;
-  match_id: string;
-  user_id: string;
-  character_name: string | null;
-  turn_order: number;
-  board_position: number;
-  is_finished: boolean;
-  joined_at: string;
-  username: string | null;
+type SummaryPlayer = {
+  username?: string | null;
 };
 
 type MatchSummaryProps = {
   match: MatchData | null;
-  currentTurnPlayer: MatchPlayerRow | undefined;
-  winnerPlayer: MatchPlayerRow | undefined;
+  currentTurnPlayer: SummaryPlayer | null;
+  winnerPlayer: SummaryPlayer | null;
 };
 
 export default function MatchSummary({
@@ -34,50 +28,73 @@ export default function MatchSummary({
   currentTurnPlayer,
   winnerPlayer,
 }: MatchSummaryProps) {
-  if (!match) return null;
-
   return (
-    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-      <h2 className="text-xl font-semibold text-gray-900">Resumen de partida</h2>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <p className="text-sm text-gray-700">
-          <span className="font-semibold">ID de partida:</span> {match.id}
+    <section className="overflow-hidden rounded-[30px] border border-[#F1F6E8]/10 bg-[linear-gradient(180deg,rgba(14,18,16,0.98),rgba(8,10,9,0.98))] shadow-[0_22px_60px_rgba(0,0,0,0.34)]">
+      <div className="border-b border-[#F1F6E8]/10 bg-[linear-gradient(90deg,rgba(255,123,165,0.10),rgba(255,216,107,0.08),rgba(111,214,255,0.07))] px-6 py-5">
+        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#FFD7E6]">
+          Estado global
         </p>
-
-        <p className="text-sm text-gray-700">
-          <span className="font-semibold">Lobby ID:</span> {match.lobby_id}
-        </p>
-
-        <p className="text-sm text-gray-700">
-          <span className="font-semibold">Estado:</span> {match.status}
-        </p>
-
-        <p className="text-sm text-gray-700">
-          <span className="font-semibold">Turno número:</span> {match.turn_number}
-        </p>
-
-        {match.order_target_number !== null && (
-          <p className="text-sm text-gray-700">
-            <span className="font-semibold">Número objetivo del orden:</span>{" "}
-            {match.order_target_number}
-          </p>
-        )}
-
-        <p className="text-sm text-gray-700 sm:col-span-2">
-          <span className="font-semibold">Turno actual:</span>{" "}
-          {match.status === "finished"
-            ? "Partida terminada"
-            : currentTurnPlayer?.username ?? "No definido"}
-        </p>
-
-        {match.status === "finished" && (
-          <p className="text-sm text-gray-700 sm:col-span-2">
-            <span className="font-semibold">Ganador:</span>{" "}
-            {winnerPlayer?.username ?? "Jugador ganador"}
-          </p>
-        )}
+        <h3 className="mt-2 text-3xl font-black text-[#F8FFF0]">
+          Resumen de partida
+        </h3>
       </div>
-    </div>
+
+      <div className="grid gap-4 p-6 sm:grid-cols-2">
+
+        <div className="rounded-[22px] border border-[#F1F6E8]/10 bg-[#101511] px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#86F07F]">
+            Fase
+          </p>
+          <p className="mt-2 text-lg font-black capitalize text-[#F8FFF0]">
+            {match?.phase ?? "-"}
+          </p>
+        </div>
+
+        <div className="rounded-[22px] border border-[#F1F6E8]/10 bg-[#101511] px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FF7BA5]">
+            Estado
+          </p>
+          <p className="mt-2 text-lg font-black capitalize text-[#F8FFF0]">
+            {match?.status ?? "-"}
+          </p>
+        </div>
+
+        <div className="rounded-[22px] border border-[#F1F6E8]/10 bg-[#101511] px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6FD6FF]">
+            Turno actual
+          </p>
+          <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
+            {currentTurnPlayer?.username ?? "No definido"}
+          </p>
+        </div>
+
+        <div className="rounded-[22px] border border-[#F1F6E8]/10 bg-[#101511] px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD86B]">
+            Ganador
+          </p>
+          <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
+            {winnerPlayer?.username ?? "Aún no"}
+          </p>
+        </div>
+
+        <div className="rounded-[22px] border border-[#F1F6E8]/10 bg-[#101511] px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#86F07F]">
+            Número objetivo del orden
+          </p>
+          <p className="mt-2 text-lg font-black text-[#F8FFF0]">
+            {match?.order_target_number ?? "-"}
+          </p>
+        </div>
+
+        <div className="rounded-[22px] border border-[#F1F6E8]/10 bg-[#101511] px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FF7BA5]">
+            Turno número
+          </p>
+          <p className="mt-2 text-lg font-black text-[#F8FFF0]">
+            {match?.turn_number ?? "-"}
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }

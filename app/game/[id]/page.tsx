@@ -382,6 +382,9 @@ export default function GamePage() {
     (player) => player.user_id === match?.winner_user_id
   );
 
+  const leadingPlayer =
+  [...players].sort((a, b) => b.board_position - a.board_position)[0] ?? null;
+
   const isMyTurn = currentUserId === match?.current_turn_user_id;
   const currentMatchId = match?.id ?? null;
 
@@ -653,24 +656,96 @@ export default function GamePage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 px-4 py-10">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 rounded-2xl bg-white p-8 shadow-md">
-          <h1 className="text-3xl font-bold text-gray-900">Partida en progreso</h1>
-          <p className="mt-2 text-gray-600">
-            Esta es una primera versión visual de la partida mientras se sigue
-            construyendo el tablero principal.
-          </p>
-        </div>
+    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#17121C_0%,#0C0F12_38%,#050607_100%)] text-[#F8FFF0]">
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(111,214,255,0.06),transparent_20%,transparent_78%,rgba(255,216,107,0.06))]" />
+      <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(to_right,rgba(240,247,229,0.85)_1px,transparent_1px),linear-gradient(to_bottom,rgba(240,247,229,0.85)_1px,transparent_1px)] [background-size:44px_44px]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(111,214,255,0.10),transparent_18%),radial-gradient(circle_at_85%_14%,rgba(255,123,165,0.08),transparent_18%),radial-gradient(circle_at_20%_80%,rgba(134,240,127,0.08),transparent_16%),radial-gradient(circle_at_80%_78%,rgba(255,216,107,0.08),transparent_16%)]" />
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="space-y-6">
-            <MatchSummary
-              match={match}
-              currentTurnPlayer={currentTurnPlayer}
-              winnerPlayer={winnerPlayer}
-            />
+      <div className="pointer-events-none absolute left-[8%] top-[12%] h-40 w-40 rounded-full bg-[#6FD6FF]/10 blur-3xl" />
+      <div className="pointer-events-none absolute right-[10%] top-[12%] h-40 w-40 rounded-full bg-[#FF7BA5]/10 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-[8%] left-[20%] h-32 w-32 rounded-full bg-[#86F07F]/8 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-[10%] right-[18%] h-32 w-32 rounded-full bg-[#FFD86B]/8 blur-3xl" />
 
+      <div className="relative mx-auto max-w-[1900px] px-4 py-6 sm:px-6 lg:px-8">
+        <section className="overflow-hidden rounded-[40px] border border-[#F1F6E8]/10 bg-[linear-gradient(180deg,rgba(14,16,18,0.96),rgba(7,8,10,0.98))] shadow-[0_32px_100px_rgba(0,0,0,0.48)]">
+          <div className="border-b border-[#F1F6E8]/10 bg-[linear-gradient(90deg,rgba(111,214,255,0.08),rgba(134,240,127,0.08),rgba(255,216,107,0.08),rgba(255,123,165,0.07))] px-6 py-6">
+            <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-end 2xl:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-[#6FD6FF]/20 bg-[#6FD6FF]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#DDF7FF]">
+                    Mesa activa
+                  </span>
+                  <span className="rounded-full border border-[#86F07F]/20 bg-[#86F07F]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#E6FFD9]">
+                    Tablero principal
+                  </span>
+                  <span className="rounded-full border border-[#FFD86B]/20 bg-[#FFD86B]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFF0BA]">
+                    Turno #{match?.turn_number ?? "-"}
+                  </span>
+                  <span className="rounded-full border border-[#FF7BA5]/20 bg-[#FF7BA5]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD7E6]">
+                    Estado: {match?.status ?? "-"}
+                  </span>
+                </div>
+
+                <h1 className="mt-4 text-4xl font-black leading-tight text-[#F8FFF0] sm:text-5xl">
+                  Cámara de
+                  <span className="bg-[linear-gradient(135deg,#6FD6FF_0%,#86F07F_28%,#FFD86B_62%,#FF7BA5_100%)] bg-clip-text text-transparent">
+                    {" "}
+                    expedición
+                  </span>
+                </h1>
+
+                <p className="mt-3 max-w-4xl text-base leading-7 text-[#DBE8D6]/80">
+                  Esta pantalla ya está construida alrededor del tablero. El recorrido es
+                  el centro de la experiencia y el resto de paneles ahora acompaña la
+                  partida desde abajo, sin robarle protagonismo.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-[24px] border border-[#6FD6FF]/16 bg-[linear-gradient(135deg,rgba(111,214,255,0.12),rgba(11,18,22,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#DDF7FF]">
+                    Turno actual
+                  </p>
+                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
+                    {currentTurnPlayer?.username ?? "No definido"}
+                    {currentTurnPlayer?.user_id === currentUserId ? " (Tú)" : ""}
+                  </p>
+                </div>
+
+                <div className="rounded-[24px] border border-[#86F07F]/16 bg-[linear-gradient(135deg,rgba(134,240,127,0.12),rgba(12,20,13,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#E6FFD9]">
+                    Tu campeón
+                  </p>
+                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
+                    {myChosenCharacterName ?? "No definido"}
+                  </p>
+                </div>
+
+                <div className="rounded-[24px] border border-[#FFD86B]/16 bg-[linear-gradient(135deg,rgba(255,216,107,0.12),rgba(24,20,10,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FFF0BA]">
+                    Líder actual
+                  </p>
+                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
+                    {leadingPlayer?.username ?? "No definido"}
+                  </p>
+                  <p className="mt-1 text-sm text-[#FFF3CC]/74">
+                    Casilla {leadingPlayer?.board_position ?? "-"}
+                  </p>
+                </div>
+
+                <div className="rounded-[24px] border border-[#FF7BA5]/16 bg-[linear-gradient(135deg,rgba(255,123,165,0.12),rgba(24,11,17,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD7E6]">
+                    Ganador
+                  </p>
+                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
+                    {winnerPlayer?.username ?? (match?.status === "finished" ? "Definido" : "Aún no")}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6 p-6">
             <GameBoard
               players={players}
               currentUserId={currentUserId}
@@ -679,27 +754,33 @@ export default function GamePage() {
               matchStatus={match?.status ?? null}
             />
 
-            <PlayersPanel
-              players={players}
-              currentUserId={currentUserId}
-              currentTurnUserId={match?.current_turn_user_id ?? null}
-            />
-          </div>
+            <div className="grid gap-6 2xl:grid-cols-[430px_430px_minmax(0,1fr)]">
+              <GameSidebar
+                matchStatus={match?.status ?? null}
+                turnNumber={match?.turn_number ?? null}
+                currentTurnPlayer={currentTurnPlayer}
+                winnerPlayer={winnerPlayer}
+                turnMessage={turnMessage}
+                isMyTurn={isMyTurn}
+                onPlayTurn={handlePlayTurn}
+                onGoHome={() => router.push("/home")}
+                finishedAt={match?.finished_at ?? null}
+              />
 
-          <div>
-            <GameSidebar
-              matchStatus={match?.status ?? null}
-              turnNumber={match?.turn_number ?? null}
-              currentTurnPlayer={currentTurnPlayer}
-              winnerPlayer={winnerPlayer}
-              turnMessage={turnMessage}
-              isMyTurn={isMyTurn}
-              onPlayTurn={handlePlayTurn}
-              onGoHome={() => router.push("/home")}
-              finishedAt={match?.finished_at ?? null}
-            />
+              <MatchSummary
+                match={match}
+                currentTurnPlayer={currentTurnPlayer}
+                winnerPlayer={winnerPlayer}
+              />
+
+              <PlayersPanel
+                players={players}
+                currentUserId={currentUserId}
+                currentTurnUserId={match?.current_turn_user_id ?? null}
+              />
+            </div>
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );
