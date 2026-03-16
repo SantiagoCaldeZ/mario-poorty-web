@@ -1,9 +1,20 @@
 "use client";
 
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+
 type SidebarPlayer = {
   id?: string;
   username?: string | null;
   user_id?: string | null;
+};
+
+type PlayTurnResult = {
+  rolled_value: number;
+  updated_position: number;
+  next_turn_user_id: string | null;
+  updated_turn_number: number;
+  match_finished: boolean;
 };
 
 type GameSidebarProps = {
@@ -13,10 +24,22 @@ type GameSidebarProps = {
   winnerPlayer: SidebarPlayer | null;
   turnMessage: string;
   isMyTurn: boolean;
-  onPlayTurn: () => void;
+  onPlayTurn: () => Promise<PlayTurnResult | null>;
+  onRollResolved: (result: PlayTurnResult) => Promise<void> | void;
   onGoHome: () => void;
   finishedAt: string | null;
 };
+
+const DICE_ANIMATION_STEPS = 13;
+const DICE_ANIMATION_DELAY_MS = 200;
+const DICE_PRE_BLINK_WAIT_MS = 700;
+const DICE_BLINK_REPEATS = 6;
+const DICE_BLINK_DELAY_MS = 100;
+const DICE_POST_BLINK_WAIT_MS = 400;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 export default function GameSidebar({
   matchStatus,
@@ -26,9 +49,106 @@ export default function GameSidebar({
   turnMessage,
   isMyTurn,
   onPlayTurn,
+  onRollResolved,
   onGoHome,
   finishedAt,
 }: GameSidebarProps) {
+  const [displayedDieValue, setDisplayedDieValue] = useState(1);
+  const [isRolling, setIsRolling] = useState(false);
+  const [isDieVisible, setIsDieVisible] = useState(true);
+  const [localStatusText, setLocalStatusText] = useState("Esperando lanzamiento");
+
+  const diceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const unmountedRef = useRef(false);
+
+  useEffect(() => {
+    unmountedRef.current = false;
+
+    return () => {
+      unmountedRef.current = true;
+
+      if (diceAudioRef.current) {
+        diceAudioRef.current.pause();
+        diceAudioRef.current.currentTime = 0;
+      }
+    };
+  }, []);
+
+  const playDiceSound = () => {
+    if (!diceAudioRef.current) {
+      diceAudioRef.current = new Audio("/dados/SonidoDados.wav");
+      diceAudioRef.current.volume = 0.80;
+      diceAudioRef.current.loop = true;
+    }
+
+    diceAudioRef.current.currentTime = 0;
+    diceAudioRef.current.play().catch(() => {});
+  };
+
+  const stopDiceSound = () => {
+    if (!diceAudioRef.current) return;
+    diceAudioRef.current.pause();
+    diceAudioRef.current.currentTime = 0;
+  };
+
+  const handleRollClick = async () => {
+    if (!isMyTurn || matchStatus !== "active" || isRolling) return;
+
+    setIsRolling(true);
+    setIsDieVisible(true);
+    setLocalStatusText("Lanzando dado...");
+
+    playDiceSound();
+
+    const turnResult = await onPlayTurn();
+
+    if (!turnResult) {
+      stopDiceSound();
+      setIsRolling(false);
+      setLocalStatusText("No se pudo completar el lanzamiento");
+      return;
+    }
+    
+    for (let i = 0; i < DICE_ANIMATION_STEPS; i++) {
+      if (unmountedRef.current) return;
+
+      const valueForThisStep =
+        i === DICE_ANIMATION_STEPS - 1
+          ? turnResult.rolled_value
+          : Math.floor(Math.random() * 6) + 1;
+
+      setDisplayedDieValue(valueForThisStep);
+      await sleep(DICE_ANIMATION_DELAY_MS);
+    }
+
+    setLocalStatusText(`Resultado final: ${turnResult.rolled_value}`);
+
+    // Pausa exacta antes del parpadeo
+    await sleep(DICE_PRE_BLINK_WAIT_MS);
+
+    // Parpadeo final exacto
+    for (let i = 0; i < DICE_BLINK_REPEATS; i++) {
+      if (unmountedRef.current) return;
+
+      setIsDieVisible(false);
+      await sleep(DICE_BLINK_DELAY_MS);
+
+      setIsDieVisible(true);
+      await sleep(DICE_BLINK_DELAY_MS);
+    }
+
+    // En el original todavía queda un pequeño margen antes de resolver
+    await sleep(DICE_POST_BLINK_WAIT_MS);
+
+    stopDiceSound();
+    await onRollResolved(turnResult);
+
+    if (unmountedRef.current) return;
+
+    setIsRolling(false);
+    setLocalStatusText("Lanzamiento resuelto");
+  };
+
   const statusTone =
     matchStatus === "finished"
       ? "border-[#FFD86B]/18 bg-[linear-gradient(135deg,rgba(255,216,107,0.14),rgba(20,16,8,0.98))]"
@@ -99,51 +219,6 @@ export default function GameSidebar({
               Finalizó: {new Date(finishedAt).toLocaleString()}
             </p>
           )}
-        </div>
-
-        <div className="rounded-[24px] border border-[#F1F6E8]/10 bg-[linear-gradient(180deg,rgba(10,13,11,0.98),rgba(7,9,8,0.98))] p-5">
-          <div className="flex items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${actionTone}`}>
-              {matchStatus === "finished"
-                ? "Partida cerrada"
-                : isMyTurn
-                ? "Tu turno"
-                : "Esperando"}
-            </span>
-          </div>
-
-          <p className="mt-4 text-sm leading-6 text-[#DBE8D6]/78">
-            {matchStatus === "finished"
-              ? "La partida ya terminó. Puedes revisar el resultado final o volver al inicio."
-              : isMyTurn
-              ? "Lanza el dado para avanzar por el tablero. Tu resultado se actualizará en tiempo real."
-              : "Espera a que el turno llegue a ti. El tablero y los estados seguirán actualizándose automáticamente."}
-          </p>
-
-          {turnMessage && (
-            <div className="mt-4 rounded-[20px] border border-[#6FD6FF]/18 bg-[linear-gradient(135deg,rgba(111,214,255,0.12),rgba(12,20,24,0.96))] px-4 py-4 text-sm leading-6 text-[#DDF7FF]">
-              {turnMessage}
-            </div>
-          )}
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={onGoHome}
-              className="rounded-[22px] border border-[#F1F6E8]/10 bg-[#121714] px-5 py-4 text-sm font-black uppercase tracking-[0.12em] text-[#F8FFF0] transition hover:bg-[#18201A]"
-            >
-              Volver al inicio
-            </button>
-
-            <button
-              type="button"
-              onClick={onPlayTurn}
-              disabled={!isMyTurn || matchStatus !== "active"}
-              className="rounded-[22px] bg-[linear-gradient(135deg,#FFD86B_0%,#86F07F_42%,#6FD6FF_100%)] px-5 py-4 text-sm font-black uppercase tracking-[0.12em] text-[#08110A] shadow-[0_14px_28px_rgba(111,214,255,0.16)] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Lanzar dado
-            </button>
-          </div>
         </div>
       </div>
     </section>

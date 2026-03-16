@@ -374,13 +374,11 @@ export default function GamePage() {
     setCharacterRevealState(alreadyShown ? "hidden" : "showing");
   }, [match?.id, match?.phase, currentUserId, myChosenCharacterName]);
 
-  const currentTurnPlayer = players.find(
-    (player) => player.user_id === match?.current_turn_user_id
-  );
+  const currentTurnPlayer =
+    players.find((player) => player.user_id === match?.current_turn_user_id) ?? null;
 
-  const winnerPlayer = players.find(
-    (player) => player.user_id === match?.winner_user_id
-  );
+  const winnerPlayer =
+    players.find((player) => player.user_id === match?.winner_user_id) ?? null;
 
   const leadingPlayer =
   [...players].sort((a, b) => b.board_position - a.board_position)[0] ?? null;
@@ -388,8 +386,8 @@ export default function GamePage() {
   const isMyTurn = currentUserId === match?.current_turn_user_id;
   const currentMatchId = match?.id ?? null;
 
-  const handlePlayTurn = async () => {
-    if (!currentMatchId) return;
+  const handlePlayTurn = useCallback(async (): Promise<PlayTurnResult | null> => {
+    if (!currentMatchId) return null;
 
     setServerError("");
     setTurnMessage("");
@@ -400,14 +398,15 @@ export default function GamePage() {
 
     if (error) {
       setServerError(error.message);
-      return;
+      return null;
     }
 
     const result = Array.isArray(data) ? data[0] : data;
+    return result ? (result as PlayTurnResult) : null;
+  }, [currentMatchId]);
 
-    if (result) {
-      const turnResult = result as PlayTurnResult;
-
+  const handleRollResolved = useCallback(
+    async (turnResult: PlayTurnResult) => {
       if (turnResult.match_finished) {
         setTurnMessage(
           `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!`
@@ -417,10 +416,11 @@ export default function GamePage() {
           `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.`
         );
       }
-    }
 
-    await loadGame(false);
-  };
+      await loadGame(false);
+    },
+    [loadGame]
+  );
 
   const handleSubmitOrderNumber = useCallback(async (forcedNumber?: number) => {
     if (!match?.id) return;
@@ -752,6 +752,10 @@ export default function GamePage() {
               currentTurnUserId={match?.current_turn_user_id ?? null}
               winnerUserId={match?.winner_user_id ?? null}
               matchStatus={match?.status ?? null}
+              turnMessage={turnMessage}
+              isMyTurn={isMyTurn}
+              onPlayTurn={handlePlayTurn}
+              onRollResolved={handleRollResolved}
             />
 
             <div className="grid gap-6 2xl:grid-cols-[430px_430px_minmax(0,1fr)]">
@@ -763,6 +767,7 @@ export default function GamePage() {
                 turnMessage={turnMessage}
                 isMyTurn={isMyTurn}
                 onPlayTurn={handlePlayTurn}
+                onRollResolved={handleRollResolved}
                 onGoHome={() => router.push("/home")}
                 finishedAt={match?.finished_at ?? null}
               />

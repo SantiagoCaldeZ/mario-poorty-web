@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useMemo } from "react";
 import { GOBLIN_SWAMP_BOARD, type TileType } from "@/lib/board";
+import DiceRollPanel from "@/components/game/DiceRollPanel";
 
 type MatchPlayerRow = {
   id: string;
@@ -16,12 +17,24 @@ type MatchPlayerRow = {
   username: string | null;
 };
 
+type PlayTurnResult = {
+  rolled_value: number;
+  updated_position: number;
+  next_turn_user_id: string | null;
+  updated_turn_number: number;
+  match_finished: boolean;
+};
+
 type GameBoardProps = {
   players: MatchPlayerRow[];
   currentUserId: string | null;
   currentTurnUserId: string | null;
   winnerUserId: string | null;
   matchStatus: "active" | "finished" | "abandoned" | null;
+  turnMessage: string;
+  isMyTurn: boolean;
+  onPlayTurn: () => Promise<PlayTurnResult | null>;
+  onRollResolved: (result: PlayTurnResult) => Promise<void> | void;
 };
 
 const BOARD = GOBLIN_SWAMP_BOARD;
@@ -111,6 +124,10 @@ export default function GameBoard({
   currentTurnUserId,
   winnerUserId,
   matchStatus,
+  turnMessage,
+  isMyTurn,
+  onPlayTurn,
+  onRollResolved,
 }: GameBoardProps) {
   const currentUserPlayer = useMemo(
     () => players.find((player) => player.user_id === currentUserId) ?? null,
@@ -147,7 +164,7 @@ export default function GameBoard({
   return (
     <section className="overflow-hidden rounded-[36px] border border-[#F1F6E8]/10 bg-[linear-gradient(180deg,rgba(12,18,13,0.96),rgba(7,10,8,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.46)]">
       <div className="border-b border-[#F1F6E8]/10 bg-[linear-gradient(90deg,rgba(120,255,168,0.10),rgba(111,214,255,0.07),rgba(255,123,165,0.06),rgba(255,216,107,0.08))] px-6 py-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px_260px] xl:items-start">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-[#86F07F]/20 bg-[#86F07F]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#E6FFD9]">
@@ -157,7 +174,7 @@ export default function GameBoard({
                 {BOARD.name}
               </span>
               <span className="rounded-full border border-[#FFD86B]/20 bg-[#FFD86B]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFF0BA]">
-                26 casillas
+                {BOARD.tiles.length} casillas
               </span>
             </div>
 
@@ -174,9 +191,24 @@ export default function GameBoard({
               el recorrido, la posición actual, la meta y la lectura rápida del estado
               del juego.
             </p>
+
+            <div className="mt-5 h-3 rounded-full bg-[#141A15]">
+              <div
+                className="h-3 rounded-full bg-[linear-gradient(90deg,#6FD6FF_0%,#86F07F_35%,#FFD86B_68%,#FF7BA5_100%)] transition-all duration-500"
+                style={{ width: `${boardProgress}%` }}
+              />
+            </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <DiceRollPanel
+            matchStatus={matchStatus}
+            isMyTurn={isMyTurn}
+            turnMessage={turnMessage}
+            onPlayTurn={onPlayTurn}
+            onRollResolved={onRollResolved}
+          />
+
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
             <div className="rounded-[24px] border border-[#F1F6E8]/10 bg-[#0D120E]/82 px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
               <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6FD6FF]">
                 Tu posición
@@ -204,13 +236,6 @@ export default function GameBoard({
               </p>
             </div>
           </div>
-        </div>
-
-        <div className="mt-5 h-3 rounded-full bg-[#141A15]">
-          <div
-            className="h-3 rounded-full bg-[linear-gradient(90deg,#6FD6FF_0%,#86F07F_35%,#FFD86B_68%,#FF7BA5_100%)] transition-all duration-500"
-            style={{ width: `${boardProgress}%` }}
-          />
         </div>
       </div>
 
