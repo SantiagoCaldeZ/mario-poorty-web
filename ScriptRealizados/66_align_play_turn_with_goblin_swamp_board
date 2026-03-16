@@ -28,7 +28,7 @@ declare
   next_user uuid;
   dice_value integer;
   new_position integer;
-  board_limit integer := 25;
+  board_limit integer := 30;
   did_finish boolean := false;
 begin
   current_user_id := auth.uid();
