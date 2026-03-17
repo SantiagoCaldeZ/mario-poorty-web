@@ -321,3 +321,53 @@ export function getTileForPosition(matchId: string, boardPosition: number): Boar
   const board = getMatchBoard(matchId);
   return board.tiles.find((tile) => tile.index === boardPosition) ?? null;
 }
+
+export type TileLandingPreview = {
+  tile: BoardTile | null;
+  familyLabel: string;
+  previewText: string;
+};
+
+function getTileFamilyLabel(family: TileFamily): string {
+  switch (family) {
+    case "start":
+      return "inicio";
+    case "normal":
+      return "normal";
+    case "bonus":
+      return "bonus";
+    case "trap":
+      return "trampa";
+    case "special_move":
+      return "movimiento especial";
+    case "minigame":
+      return "minijuego";
+    case "finish":
+      return "meta";
+    default:
+      return "desconocida";
+  }
+}
+
+export function getTileLandingPreview(
+  matchId: string,
+  boardPosition: number
+): TileLandingPreview {
+  const tile = getTileForPosition(matchId, boardPosition);
+
+  if (!tile) {
+    return {
+      tile: null,
+      familyLabel: "desconocida",
+      previewText: "No se pudo detectar la casilla en la que cayó el jugador.",
+    };
+  }
+
+  const familyLabel = getTileFamilyLabel(tile.family);
+
+  return {
+    tile,
+    familyLabel,
+    previewText: `Casilla detectada: ${familyLabel} (${tile.label}).`,
+  };
+}
