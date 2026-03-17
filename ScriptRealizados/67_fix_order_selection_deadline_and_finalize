@@ -235,15 +235,14 @@ begin
     raise exception 'La partida no tiene jugadores.';
   end if;
 
-  if coalesce(match_row.order_selection_deadline_at, now()) > now()
-     and submitted_players < total_players then
+  if coalesce(match_row.order_selection_deadline_at, now()) > now() then
     return query
     select
       match_row.order_target_number,
       null::uuid,
       false,
       'choosing_order'::text;
-
+  
     return;
   end if;
 
