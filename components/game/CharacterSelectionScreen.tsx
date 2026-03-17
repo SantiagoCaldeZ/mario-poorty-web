@@ -57,9 +57,23 @@ export default function CharacterSelectionScreen({
     [players, currentUserId]
   );
 
+  const [timeExpired, setTimeExpired] = useState<boolean>(false);
+  const [isAutoSelecting, setIsAutoSelecting] = useState<boolean>(false);
+  const [autoRetryTick, setAutoRetryTick] = useState<number>(0);
+
+  const currentTurnKey = `${currentPicker?.user_id ?? "none"}-${currentCharacterTurnOrder ?? "none"}-${currentCharacterTurnStartedAt ?? "none"}`;
+  const autoSelectionKeyRef = useRef<string | null>(null);
+  const activeTurnKeyRef = useRef<string | null>(null);
+
   const isMyTurnToPick =
-    myPlayer?.turn_order === currentCharacterTurnOrder &&
-    myPlayer?.character_name === null;
+    currentPicker?.user_id === currentUserId &&
+    currentPicker?.character_name === null;
+
+  const canInteract =
+    isMyTurnToPick &&
+    !timeExpired &&
+    !selectionSubmitting &&
+    !isAutoSelecting;
 
   const takenCharacters = useMemo(
     () =>
@@ -114,23 +128,20 @@ export default function CharacterSelectionScreen({
   };
 
   const [secondsLeft, setSecondsLeft] = useState<number>(calculateSecondsLeft);
-  const [timeExpired, setTimeExpired] = useState<boolean>(false);
-  const [isAutoSelecting, setIsAutoSelecting] = useState<boolean>(false);
-  const [autoRetryTick, setAutoRetryTick] = useState<number>(0);
-
-  const currentTurnKey = `${currentCharacterTurnOrder ?? "none"}-${currentCharacterTurnStartedAt ?? "none"}`;
-  const autoSelectionKeyRef = useRef<string | null>(null);
 
   const playHoverSound = () => {
-    if (!isMyTurnToPick) return;
+    if (!canInteract) return;
 
     const audio = new Audio("/sounds/seleccion.wav");
-    audio.volume = 0.5;
+    audio.volume = 0.6;
     audio.play().catch(() => {});
   };
 
   useEffect(() => {
+    activeTurnKeyRef.current = currentTurnKey;
+
     const nextSeconds = calculateSecondsLeft();
+
     setSecondsLeft(nextSeconds);
     setTimeExpired(nextSeconds <= 0);
     setIsAutoSelecting(false);
@@ -166,24 +177,41 @@ export default function CharacterSelectionScreen({
     if (availableCharacters.length === 0) return;
     if (autoSelectionKeyRef.current === currentTurnKey) return;
 
-    autoSelectionKeyRef.current = currentTurnKey;
+    const runTurnKey = currentTurnKey;
+
+    autoSelectionKeyRef.current = runTurnKey;
     setIsAutoSelecting(true);
 
     const timeout = window.setTimeout(async () => {
-      const outcome = await onAutoSelectCharacter();
+      try {
+        const outcome = await onAutoSelectCharacter();
 
-      if (outcome === "retry") {
+        if (activeTurnKeyRef.current !== runTurnKey) {
+          return;
+        }
+
+        if (outcome === "retry") {
+          setIsAutoSelecting(false);
+          autoSelectionKeyRef.current = null;
+
+          window.setTimeout(() => {
+            if (activeTurnKeyRef.current === runTurnKey) {
+              setAutoRetryTick((value) => value + 1);
+            }
+          }, 400);
+
+          return;
+        }
+
         setIsAutoSelecting(false);
-        autoSelectionKeyRef.current = null;
+      } catch (error) {
+        console.error("No se pudo autoasignar personaje.", error);
 
-        window.setTimeout(() => {
-          setAutoRetryTick((value) => value + 1);
-        }, 400);
-
-        return;
+        if (activeTurnKeyRef.current === runTurnKey) {
+          setIsAutoSelecting(false);
+          autoSelectionKeyRef.current = null;
+        }
       }
-
-      setIsAutoSelecting(false);
     }, 250);
 
     return () => window.clearTimeout(timeout);
@@ -198,9 +226,9 @@ export default function CharacterSelectionScreen({
   ]);
 
   const statusTitle = (() => {
-    if (isAutoSelecting) return "Asignando personaje automáticamente";
-    if (isMyTurnToPick && !timeExpired) return "Es tu turno de elegir";
-    if (timeExpired) return "Tiempo agotado";
+    if (isAutoSelecting && timeExpired) return "Asignando personaje automáticamente";
+    if (isMyTurnToPick && !timeExpired && !isAutoSelecting) return "Es tu turno de elegir";
+    if (timeExpired && !isAutoSelecting) return "Tiempo agotado";
     if (currentPicker?.character_name) return "Turno resuelto";
     return "Esperando selección";
   })();
@@ -228,8 +256,8 @@ export default function CharacterSelectionScreen({
   })();
 
   const phaseLabel = (() => {
-    if (isAutoSelecting) return "Autoasignando";
-    if (timeExpired) return "Tiempo agotado";
+    if (isAutoSelecting && timeExpired) return "Autoasignando";
+    if (timeExpired && !isAutoSelecting) return "Tiempo agotado";
     if (currentPicker?.character_name) return "Turno resuelto";
     return "Selección abierta";
   })();
@@ -444,19 +472,13 @@ export default function CharacterSelectionScreen({
                           type="button"
                           onMouseEnter={playHoverSound}
                           onClick={() => onSelectCharacter(character.name)}
-                          disabled={
-                            !isMyTurnToPick ||
-                            isTaken ||
-                            selectionSubmitting ||
-                            isAutoSelecting ||
-                            timeExpired
-                          }
+                          disabled={isTaken || !canInteract}
                           className={`group relative overflow-hidden rounded-[28px] border p-4 text-left transition duration-300 ${
                             isTaken
                               ? "cursor-not-allowed border-[#F0D7E6]/10 bg-[linear-gradient(180deg,rgba(28,19,24,0.96),rgba(16,11,14,0.98))] text-[#A6959F]"
-                              : isMyTurnToPick && !timeExpired
+                              : canInteract
                               ? "border-[#F0D7E6]/10 bg-[linear-gradient(180deg,rgba(31,19,26,0.96),rgba(15,10,14,0.98))] text-[#FFF8FB] hover:-translate-y-1 hover:border-[#FFCB68]/20 hover:shadow-[0_18px_40px_rgba(0,0,0,0.20)]"
-                              : "cursor-not-allowed border-[#F0D7E6]/10 bg-[linear-gradient(180deg,rgba(24,17,21,0.96),rgba(13,9,12,0.98))] text-[#B5A8AF]"
+                              : "cursor-not-allowed border-[#F0D7E6]/10 bg-[linear-gradient(180deg,rgba(24,17,21,0.96),rgba(13,9,12,0.98))] text-[#B5A8AF] opacity-70"
                           } ${isSelectingThisCharacter ? "opacity-60" : ""}`}
                         >
                           <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-[#CD699D]/8 blur-3xl" />
@@ -479,7 +501,7 @@ export default function CharacterSelectionScreen({
                                 <span className="rounded-full border border-[#CD699D]/14 bg-[#CD699D]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#F3C9DE]">
                                   Elegido por {takenBy ?? "otro jugador"}
                                 </span>
-                              ) : isMyTurnToPick && !timeExpired ? (
+                              ) : canInteract ? (
                                 <span className="rounded-full border border-[#FFCB68]/14 bg-[#FFCB68]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#FFE7B1]">
                                   Disponible
                                 </span>

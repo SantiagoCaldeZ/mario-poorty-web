@@ -17,19 +17,27 @@ type MatchPlayerRow = {
   username: string | null;
 };
 
+type FinalizeOrderResult = {
+  target_number: number | null;
+  first_turn_user_id: string | null;
+  finalized: boolean;
+  next_phase: string | null;
+};
+
 type OrderSelectionScreenProps = {
   players: MatchPlayerRow[];
   currentUserId: string | null;
   selectedOrderNumber: string;
   onSelectedOrderNumberChange: (value: string) => void;
   onSubmitOrderNumber: (forcedNumber?: number) => Promise<void> | void;
-  onFinalizeOrder: () => Promise<number | null>;
+  onFinalizeOrder: () => Promise<FinalizeOrderResult | null>;
   onGoHome: () => void;
   orderSubmitting: boolean;
   orderFinalizing: boolean;
   serverError: string;
   orderTargetNumber: number | null;
-  startedAt: string;
+  orderSelectionDeadlineAt: string | null;
+  orderFinalizedAt: string | null;
 };
 
 const ORDER_SELECTION_SECONDS = 15;
@@ -45,8 +53,9 @@ export default function OrderSelectionScreen({
   orderSubmitting,
   orderFinalizing,
   serverError,
-  orderTargetNumber,
-  startedAt,
+    orderTargetNumber,
+    orderSelectionDeadlineAt,
+    orderFinalizedAt,
 }: OrderSelectionScreenProps) {
   const hoverAudioRef = useRef<HTMLAudioElement | null>(null);
   const randomAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -54,14 +63,16 @@ export default function OrderSelectionScreen({
   const finalizeOrderRef = useRef(onFinalizeOrder);
 
   const calculateSecondsLeft = () => {
-    const startedAtMs = new Date(startedAt).getTime();
-    const deadlineMs = startedAtMs + ORDER_SELECTION_SECONDS * 1000;
+    if (!orderSelectionDeadlineAt) return 0;
+
+    const deadlineMs = new Date(orderSelectionDeadlineAt).getTime();
     const nowMs = Date.now();
+
     return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
   };
 
-  const [secondsLeft, setSecondsLeft] = useState(calculateSecondsLeft);
-  const [timeExpired, setTimeExpired] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(() => calculateSecondsLeft());
+  const [timeExpired, setTimeExpired] = useState(() => calculateSecondsLeft() <= 0);
   const [rollingNumber, setRollingNumber] = useState<number | null>(null);
   const [isRolling, setIsRolling] = useState(false);
   const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
@@ -75,6 +86,9 @@ export default function OrderSelectionScreen({
   const submittedPlayersCount = players.filter(
     (player) => player.selected_order_number !== null
   ).length;
+
+    const allPlayersSubmitted =
+      players.length > 0 && submittedPlayersCount === players.length;
 
   const myPlayer = players.find((player) => player.user_id === currentUserId);
   const iAlreadySubmittedOrder = myPlayer?.selected_order_number !== null;
@@ -156,22 +170,20 @@ export default function OrderSelectionScreen({
 
 
   useEffect(() => {
-    if (orderTargetNumber !== null && !hasStartedRollingRef.current) {
-      setRollingNumber(orderTargetNumber);
-      setShowResolvedOrder(true);
-      setIsRolling(false);
-      stopRandomSound();
-      return;
-    }
-
-    const interval = window.setInterval(() => {
+    const syncClock = () => {
       const nextSeconds = calculateSecondsLeft();
       setSecondsLeft(nextSeconds);
       setTimeExpired(nextSeconds <= 0);
-    }, 250);
+    };
+
+    syncClock();
+
+    if (orderFinalizedAt) return;
+
+    const interval = window.setInterval(syncClock, 250);
 
     return () => window.clearInterval(interval);
-  }, [orderTargetNumber, startedAt]);
+  }, [orderSelectionDeadlineAt, orderFinalizedAt]);
 
 
   useEffect(() => {
@@ -198,33 +210,54 @@ export default function OrderSelectionScreen({
 
 
   useEffect(() => {
-    if (!timeExpired) return;
-    if (submittedPlayersCount !== players.length) return;
     if (hasStartedRollingRef.current) return;
 
-    const start = async () => {
+    if (orderTargetNumber !== null && orderFinalizedAt) {
       hasStartedRollingRef.current = true;
+      setSecondsLeft(0);
+      setTimeExpired(true);
+      setRollingNumber(orderTargetNumber);
+      setShowResolvedOrder(true);
+      setIsRolling(false);
+      stopRandomSound();
+      return;
+    }
+
+    if (!timeExpired) return;
+    if (hasAutoFinalizedRef.current) return;
+
+    const start = async () => {
+      hasAutoFinalizedRef.current = true;
       setIsFinalizingAutomatically(true);
 
-      let finalNumber = orderTargetNumber;
+      try {
+        const result = await finalizeOrderRef.current();
 
-      if (finalNumber === null && !hasAutoFinalizedRef.current) {
-        hasAutoFinalizedRef.current = true;
-        finalNumber = await finalizeOrderRef.current();
+        if (!result?.finalized) {
+          hasAutoFinalizedRef.current = false;
+          return;
+        }
+
+        hasStartedRollingRef.current = true;
+        setSecondsLeft(0);
+        setTimeExpired(true);
+
+        if (result.target_number !== null) {
+          await runRollingSequence(result.target_number);
+        }
+      } catch (error) {
+        console.error("No se pudo finalizar el orden.", error);
+        hasAutoFinalizedRef.current = false;
+      } finally {
+        setIsFinalizingAutomatically(false);
       }
-
-      if (finalNumber !== null) {
-        await runRollingSequence(finalNumber);
-      }
-
-      setIsFinalizingAutomatically(false);
     };
 
-    start();
-  }, [timeExpired, submittedPlayersCount, players.length, orderTargetNumber]);
+    void start();
+  }, [timeExpired, orderTargetNumber, orderFinalizedAt]);
 
   const statusText = (() => {
-    if (orderTargetNumber !== null) return "Número ritual resuelto";
+    if (orderFinalizedAt || orderTargetNumber !== null) return "Número ritual resuelto";
     if (isRolling) return "El tótem del tiempo está decidiendo el orden...";
     if (isFinalizingAutomatically || orderFinalizing) return "Calculando el orden final...";
     if (isAutoSubmitting) return "Asignando un número automáticamente...";
@@ -238,7 +271,7 @@ export default function OrderSelectionScreen({
   );
 
   const phaseLabel = (() => {
-    if (orderTargetNumber !== null) return "Orden sellado";
+    if (orderFinalizedAt || orderTargetNumber !== null) return "Orden sellado";
     if (isRolling) return "Resolviendo";
     if (timeExpired) return "Tiempo agotado";
     return "Selección abierta";

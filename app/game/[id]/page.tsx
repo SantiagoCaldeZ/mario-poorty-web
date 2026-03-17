@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import GameBoard from "@/components/game/GameBoard";
@@ -10,6 +10,7 @@ import PlayersPanel from "@/components/game/PlayersPanel";
 import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
 import OrderSelectionScreen from "@/components/game/OrderSelectionScreen";
 import CharacterRevealScreen from "@/components/game/CharacterRevealScreen";
+import { getTileForPosition } from "@/lib/board";
 
 type MatchData = {
   id: string;
@@ -17,6 +18,8 @@ type MatchData = {
   status: "active" | "finished" | "abandoned";
   phase: "choosing_order" | "choosing_character" | "active" | "finished" | "abandoned";
   order_target_number: number | null;
+  order_selection_deadline_at: string | null;
+  order_finalized_at: string | null;
   current_turn_user_id: string | null;
   turn_number: number;
   winner_user_id: string | null;
@@ -54,6 +57,13 @@ type PlayTurnResult = {
   match_finished: boolean;
 };
 
+type FinalizeOrderResult = {
+  target_number: number | null;
+  first_turn_user_id: string | null;
+  finalized: boolean;
+  next_phase: string | null;
+};
+
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
@@ -71,6 +81,36 @@ export default function GamePage() {
   const [orderFinalizing, setOrderFinalizing] = useState(false);
   const [selectionSubmitting, setSelectionSubmitting] = useState(false);
   const [selectingCharacter, setSelectingCharacter] = useState<string | null>(null);
+
+  const currentCharacterPickerUserId = useMemo(() => {
+    if (!match) return null;
+    if (match.phase !== "choosing_character") return null;
+    if (match.current_character_turn_order === null) return null;
+
+    return (
+      players.find(
+        (player) => player.turn_order === match.current_character_turn_order
+      )?.user_id ?? null
+    );
+  }, [
+    match?.phase,
+    match?.current_character_turn_order,
+    players,
+  ]);
+
+  const characterTurnResetKey = [
+    match?.id ?? "none",
+    match?.phase ?? "none",
+    match?.current_character_turn_order ?? "none",
+    match?.current_character_turn_started_at ?? "none",
+    currentCharacterPickerUserId ?? "none",
+  ].join(":");
+
+  useEffect(() => {
+    setServerError("");
+    setSelectionSubmitting(false);
+    setSelectingCharacter(null);
+  }, [characterTurnResetKey]);
 
   const [characterRevealState, setCharacterRevealState] = useState<"hidden" | "showing">(
     "hidden"
@@ -170,7 +210,7 @@ export default function GamePage() {
       const { data: matchData, error: matchError } = await supabase
         .from("matches")
         .select(
-          "id, lobby_id, status, phase, order_target_number, current_character_turn_order, current_character_turn_started_at, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
+          "id, lobby_id, status, phase, order_target_number, order_selection_deadline_at, order_finalized_at, current_character_turn_order, current_character_turn_started_at, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
         )
         .eq("lobby_id", lobbyId)
         .maybeSingle();
@@ -407,19 +447,27 @@ export default function GamePage() {
 
   const handleRollResolved = useCallback(
     async (turnResult: PlayTurnResult) => {
+      const landedTile = currentMatchId
+        ? getTileForPosition(currentMatchId, turnResult.updated_position)
+        : null;
+
+      const landedText = landedTile
+        ? ` Caíste en ${landedTile.label}.`
+        : "";
+
       if (turnResult.match_finished) {
         setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!`
+          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!${landedText}`
         );
       } else {
         setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.`
+          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.${landedText}`
         );
       }
 
       await loadGame(false);
     },
-    [loadGame]
+    [currentMatchId, loadGame]
   );
 
   const handleSubmitOrderNumber = useCallback(async (forcedNumber?: number) => {
@@ -472,7 +520,7 @@ export default function GamePage() {
   }, [currentUserId, loadPlayersSnapshot, match?.id]);
 
 
-  const handleFinalizeOrder = useCallback(async (): Promise<number | null> => {
+  const handleFinalizeOrder = useCallback(async (): Promise<FinalizeOrderResult | null> => {
     if (!match?.id) return null;
 
     setServerError("");
@@ -497,11 +545,18 @@ export default function GamePage() {
       setPlayers(refreshedPlayers);
     }
 
-    setTimeout(() => {
-      window.location.reload();
-    }, 12010);
+    if (result?.finalized) {
+      setTimeout(() => {
+        window.location.reload();
+      }, 12010);
+    }
 
-    return result?.target_number ?? null;
+    return {
+      target_number: result?.target_number ?? null,
+      first_turn_user_id: result?.first_turn_user_id ?? null,
+      finalized: Boolean(result?.finalized),
+      next_phase: result?.next_phase ?? null,
+    };
   }, [loadPlayersSnapshot, match?.id]);
 
   const handleSelectCharacter = useCallback(async (characterName: string) => {
@@ -597,7 +652,8 @@ export default function GamePage() {
         orderFinalizing={orderFinalizing}
         serverError={serverError}
         orderTargetNumber={match.order_target_number}
-        startedAt={match.started_at}
+        orderSelectionDeadlineAt={match.order_selection_deadline_at}
+        orderFinalizedAt={match.order_finalized_at}
       />
     );
   }
@@ -747,6 +803,7 @@ export default function GamePage() {
 
           <div className="space-y-6 p-6">
             <GameBoard
+              matchId={match?.id ?? ""}
               players={players}
               currentUserId={currentUserId}
               currentTurnUserId={match?.current_turn_user_id ?? null}

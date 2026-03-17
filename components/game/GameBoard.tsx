@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useMemo } from "react";
-import { GOBLIN_SWAMP_BOARD, type TileType } from "@/lib/board";
+import { getMatchBoard, type TileFamily } from "@/lib/board";
+import { getCharacterTokenImage } from "@/lib/characters";
 import DiceRollPanel from "@/components/game/DiceRollPanel";
 
 type MatchPlayerRow = {
@@ -26,6 +27,7 @@ type PlayTurnResult = {
 };
 
 type GameBoardProps = {
+  matchId: string;
   players: MatchPlayerRow[];
   currentUserId: string | null;
   currentTurnUserId: string | null;
@@ -37,66 +39,28 @@ type GameBoardProps = {
   onRollResolved: (result: PlayTurnResult) => Promise<void> | void;
 };
 
-const BOARD = GOBLIN_SWAMP_BOARD;
-const LAST_TILE_INDEX = BOARD.tiles[BOARD.tiles.length - 1]?.index ?? 0;
-
-function clampBoardPosition(position: number) {
+function clampBoardPosition(position: number, lastTileIndex: number) {
   if (position < 0) return 0;
-  if (position > LAST_TILE_INDEX) return LAST_TILE_INDEX;
+  if (position > lastTileIndex) return lastTileIndex;
   return position;
 }
 
-function getTileTypeLabel(type: TileType) {
-  switch (type) {
+function getTileTone(family: TileFamily) {
+  switch (family) {
     case "start":
-      return "Inicio";
+      return "border-[#86F07F]/45 bg-[radial-gradient(circle_at_top,rgba(134,240,127,0.14),rgba(20,28,18,0.86))]";
     case "bonus":
-      return "Bonus";
+      return "border-[#FFD86B]/45 bg-[radial-gradient(circle_at_top,rgba(255,216,107,0.14),rgba(31,24,10,0.86))]";
     case "trap":
-      return "Trampa";
-    case "event":
-      return "Evento";
-    case "duel":
-      return "Duelo";
+      return "border-[#FF7BA5]/45 bg-[radial-gradient(circle_at_top,rgba(255,123,165,0.14),rgba(33,14,22,0.86))]";
+    case "special_move":
+      return "border-[#C6A6FF]/45 bg-[radial-gradient(circle_at_top,rgba(198,166,255,0.14),rgba(23,16,32,0.86))]";
+    case "minigame":
+      return "border-[#6FD6FF]/45 bg-[radial-gradient(circle_at_top,rgba(111,214,255,0.14),rgba(11,23,31,0.86))]";
     case "finish":
-      return "Meta";
+      return "border-[#F7DA7A]/55 bg-[radial-gradient(circle_at_top,rgba(247,218,122,0.18),rgba(37,28,10,0.90))]";
     default:
-      return "Normal";
-  }
-}
-
-function getTileTone(type: TileType) {
-  switch (type) {
-    case "start":
-      return {
-        tile: "border-[#86F07F]/55 bg-[radial-gradient(circle_at_top,rgba(134,240,127,0.24),rgba(20,28,18,0.94))]",
-        badge: "border-[#86F07F]/22 bg-[#86F07F]/12 text-[#E6FFD9]",
-      };
-    case "bonus":
-      return {
-        tile: "border-[#FFD86B]/55 bg-[radial-gradient(circle_at_top,rgba(255,216,107,0.22),rgba(31,24,10,0.94))]",
-        badge: "border-[#FFD86B]/22 bg-[#FFD86B]/12 text-[#FFF0BA]",
-      };
-    case "trap":
-      return {
-        tile: "border-[#FF7BA5]/55 bg-[radial-gradient(circle_at_top,rgba(255,123,165,0.22),rgba(33,14,22,0.94))]",
-        badge: "border-[#FF7BA5]/22 bg-[#FF7BA5]/12 text-[#FFD7E6]",
-      };
-    case "event":
-      return {
-        tile: "border-[#6FD6FF]/55 bg-[radial-gradient(circle_at_top,rgba(111,214,255,0.22),rgba(11,23,31,0.94))]",
-        badge: "border-[#6FD6FF]/22 bg-[#6FD6FF]/12 text-[#DDF7FF]",
-      };
-    case "finish":
-      return {
-        tile: "border-[#F7DA7A]/70 bg-[radial-gradient(circle_at_top,rgba(247,218,122,0.28),rgba(37,28,10,0.96))]",
-        badge: "border-[#F7DA7A]/22 bg-[#F7DA7A]/12 text-[#FFF3C5]",
-      };
-    default:
-      return {
-        tile: "border-[#F1F6E8]/18 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.07),rgba(12,18,13,0.95))]",
-        badge: "border-[#F1F6E8]/12 bg-[#F1F6E8]/6 text-[#F0F7E5]",
-      };
+      return "border-[#F1F6E8]/18 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.07),rgba(12,18,13,0.90))]";
   }
 }
 
@@ -119,6 +83,7 @@ function buildPathD(
 }
 
 export default function GameBoard({
+  matchId,
   players,
   currentUserId,
   currentTurnUserId,
@@ -129,6 +94,9 @@ export default function GameBoard({
   onPlayTurn,
   onRollResolved,
 }: GameBoardProps) {
+  const BOARD = useMemo(() => getMatchBoard(matchId), [matchId]);
+  const LAST_TILE_INDEX = BOARD.tiles[BOARD.tiles.length - 1]?.index ?? 0;
+
   const currentUserPlayer = useMemo(
     () => players.find((player) => player.user_id === currentUserId) ?? null,
     [players, currentUserId]
@@ -145,21 +113,74 @@ export default function GameBoard({
   );
 
   const currentUserPosition = currentUserPlayer
-    ? clampBoardPosition(currentUserPlayer.board_position)
+    ? clampBoardPosition(currentUserPlayer.board_position, LAST_TILE_INDEX)
     : null;
 
   const currentTurnPosition = currentTurnPlayer
-    ? clampBoardPosition(currentTurnPlayer.board_position)
+    ? clampBoardPosition(currentTurnPlayer.board_position, LAST_TILE_INDEX)
     : null;
 
   const winnerPosition = winnerPlayer
-    ? clampBoardPosition(winnerPlayer.board_position)
+    ? clampBoardPosition(winnerPlayer.board_position, LAST_TILE_INDEX)
     : null;
 
   const boardProgress =
     currentUserPosition !== null && LAST_TILE_INDEX > 0
       ? Math.max(0, Math.min((currentUserPosition / LAST_TILE_INDEX) * 100, 100))
       : 0;
+
+  const tilesByIndex = useMemo(
+    () => new Map(BOARD.tiles.map((tile) => [tile.index, tile])),
+    [BOARD]
+  );
+
+  const tokenPlacements = useMemo(() => {
+    const grouped = new Map<number, MatchPlayerRow[]>();
+
+    const orderedPlayers = [...players].sort((a, b) => {
+      if (a.board_position !== b.board_position) {
+        return a.board_position - b.board_position;
+      }
+
+      if (a.turn_order !== b.turn_order) {
+        return a.turn_order - b.turn_order;
+      }
+
+      return a.joined_at.localeCompare(b.joined_at);
+    });
+
+    for (const player of orderedPlayers) {
+      const position = clampBoardPosition(player.board_position, LAST_TILE_INDEX);
+
+      if (!grouped.has(position)) {
+        grouped.set(position, []);
+      }
+
+      grouped.get(position)!.push(player);
+    }
+
+    return [...grouped.entries()].flatMap(([position, groupedPlayers]) => {
+      const tile = tilesByIndex.get(position);
+      if (!tile) return [];
+
+      return groupedPlayers.map((player, index) => {
+        const slot =
+          tile.slots[index] ??
+          tile.slots[tile.slots.length - 1] ??
+          { x: 0, y: 0 };
+
+        return {
+          player,
+          tile,
+          slot,
+          tokenImage: getCharacterTokenImage(player.character_name),
+          isCurrentUser: player.user_id === currentUserId,
+          isCurrentTurn: player.user_id === currentTurnUserId,
+          isWinner: player.user_id === winnerUserId,
+        };
+      });
+    });
+  }, [players, currentUserId, currentTurnUserId, winnerUserId, tilesByIndex, LAST_TILE_INDEX]);
 
   return (
     <section className="overflow-hidden rounded-[36px] border border-[#F1F6E8]/10 bg-[linear-gradient(180deg,rgba(12,18,13,0.96),rgba(7,10,8,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.46)]">
@@ -303,8 +324,54 @@ export default function GameBoard({
               })}
             </svg>
 
+            {tokenPlacements.map(
+              ({
+                player,
+                tile,
+                slot,
+                tokenImage,
+                isCurrentUser,
+                isCurrentTurn,
+                isWinner,
+              }) => {
+                if (!tokenImage) return null;
+
+                return (
+                  <div
+                    key={player.id}
+                    className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-700 ease-out"
+                    style={{
+                      left: `${((tile.x + slot.x) / BOARD.width) * 100}%`,
+                      top: `${((tile.y + slot.y) / BOARD.height) * 100}%`,
+                      zIndex: isCurrentTurn ? 40 : isCurrentUser ? 38 : isWinner ? 36 : 30,
+                    }}
+                  >
+                    <div
+                      className={`relative h-[clamp(24px,3vw,40px)] w-[clamp(24px,3vw,40px)] overflow-hidden rounded-full border shadow-[0_10px_20px_rgba(0,0,0,0.35)] ${
+                        isCurrentTurn
+                          ? "border-[#86F07F]/80 ring-2 ring-[#86F07F]/45"
+                          : isCurrentUser
+                          ? "border-[#6FD6FF]/80 ring-2 ring-[#6FD6FF]/45"
+                          : isWinner
+                          ? "border-[#FFD86B]/80 ring-2 ring-[#FFD86B]/45"
+                          : "border-[#F1F6E8]/30"
+                      }`}
+                    >
+                      <Image
+                        src={tokenImage}
+                        alt={player.character_name ?? "Ficha"}
+                        fill
+                        sizes="40px"
+                        className="object-contain"
+                      />
+                    </div>
+                  </div>
+                );
+              }
+            )}
+
             {BOARD.tiles.map((tile) => {
-              const tileTone = getTileTone(tile.type);
+              const tileTone = getTileTone(tile.family);
 
               const isCurrentUserTile = currentUserPosition === tile.index;
               const isCurrentTurnTile = currentTurnPosition === tile.index;
@@ -322,7 +389,7 @@ export default function GameBoard({
                   }}
                 >
                   <div
-                    className={`relative h-full w-full rounded-[26px] border shadow-[0_18px_34px_rgba(0,0,0,0.28)] backdrop-blur-[2px] transition duration-300 ${tileTone.tile} ${
+                    className={`relative h-full w-full rounded-[26px] border shadow-[0_18px_34px_rgba(0,0,0,0.28)] backdrop-blur-[2px] transition duration-300 ${tileTone} ${
                       isCurrentTurnTile && matchStatus === "active"
                         ? "ring-4 ring-[#86F07F]/65 shadow-[0_0_0_12px_rgba(134,240,127,0.12),0_18px_34px_rgba(0,0,0,0.34)]"
                         : ""
@@ -338,37 +405,19 @@ export default function GameBoard({
                   >
                     <div className="pointer-events-none absolute inset-0 rounded-[26px] bg-[linear-gradient(180deg,rgba(255,255,255,0.08),transparent_40%,rgba(0,0,0,0.10))]" />
 
-                    <div className="relative flex h-full flex-col justify-between p-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="rounded-full border border-[#F1F6E8]/10 bg-[#0C120D]/78 px-2 py-1 text-[10px] font-black text-[#F8FFF0]">
-                          {tile.index}
-                        </span>
-
-                        <span
-                          className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] ${tileTone.badge}`}
-                        >
-                          {getTileTypeLabel(tile.type)}
-                        </span>
+                    <div className="relative h-full w-full">
+                      <div className="absolute left-2 top-2 z-20 rounded-full border border-[#F1F6E8]/10 bg-[#0C120D]/82 px-2 py-1 text-[10px] font-black text-[#F8FFF0]">
+                        {tile.index}
                       </div>
 
-                      <div className="space-y-1.5">
-                        {isCurrentTurnTile && matchStatus === "active" && (
-                          <div className="rounded-full border border-[#86F07F]/20 bg-[#86F07F]/10 px-2 py-1 text-center text-[8px] font-black uppercase tracking-[0.12em] text-[#E6FFD9]">
-                            Turno actual
-                          </div>
-                        )}
-
-                        {isCurrentUserTile && (
-                          <div className="rounded-full border border-[#6FD6FF]/20 bg-[#6FD6FF]/10 px-2 py-1 text-center text-[8px] font-black uppercase tracking-[0.12em] text-[#DDF7FF]">
-                            Tu casilla
-                          </div>
-                        )}
-
-                        {isWinnerTile && (
-                          <div className="rounded-full border border-[#FFD86B]/20 bg-[#FFD86B]/10 px-2 py-1 text-center text-[8px] font-black uppercase tracking-[0.12em] text-[#FFF0BA]">
-                            Ganadora
-                          </div>
-                        )}
+                      <div className="absolute inset-[6px] overflow-hidden rounded-[22px]">
+                        <Image
+                          src={tile.image}
+                          alt={tile.label}
+                          fill
+                          sizes="96px"
+                          className="object-contain"
+                        />
                       </div>
                     </div>
                   </div>
@@ -394,13 +443,14 @@ export default function GameBoard({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           {[
             { label: "Inicio", tone: "border-[#86F07F]/20 bg-[#86F07F]/10 text-[#E6FFD9]" },
             { label: "Normal", tone: "border-[#F1F6E8]/12 bg-[#F1F6E8]/6 text-[#F0F7E5]" },
             { label: "Bonus", tone: "border-[#FFD86B]/20 bg-[#FFD86B]/10 text-[#FFF0BA]" },
             { label: "Trampa", tone: "border-[#FF7BA5]/20 bg-[#FF7BA5]/10 text-[#FFD7E6]" },
-            { label: "Evento", tone: "border-[#6FD6FF]/20 bg-[#6FD6FF]/10 text-[#DDF7FF]" },
+            { label: "Minijuego", tone: "border-[#6FD6FF]/20 bg-[#6FD6FF]/10 text-[#DDF7FF]" },
+            { label: "Mov. especial", tone: "border-[#C6A6FF]/20 bg-[#C6A6FF]/10 text-[#F0E7FF]" },
             { label: "Meta", tone: "border-[#F7DA7A]/20 bg-[#F7DA7A]/10 text-[#FFF3C5]" },
           ].map((item) => (
             <div
