@@ -69,9 +69,32 @@ export default function CharacterSelectionScreen({
     currentPicker?.user_id === currentUserId &&
     currentPicker?.character_name === null;
 
+  const calculateSecondsLeft = () => {
+    if (!currentCharacterTurnStartedAt || currentCharacterTurnOrder === null) {
+      return CHARACTER_SELECTION_SECONDS;
+    }
+
+    const startedAtMs = new Date(currentCharacterTurnStartedAt).getTime();
+    const deadlineMs = startedAtMs + CHARACTER_SELECTION_SECONDS * 1000;
+    const nowMs = Date.now();
+
+    return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
+  };
+
+  const isExpiredByClock = (() => {
+    if (!currentCharacterTurnStartedAt || currentCharacterTurnOrder === null) {
+      return false;
+    }
+
+    const startedAtMs = new Date(currentCharacterTurnStartedAt).getTime();
+    const deadlineMs = startedAtMs + CHARACTER_SELECTION_SECONDS * 1000;
+
+    return Date.now() >= deadlineMs;
+  })();
+
   const canInteract =
     isMyTurnToPick &&
-    !timeExpired &&
+    !isExpiredByClock &&
     !selectionSubmitting &&
     !isAutoSelecting;
 
@@ -115,19 +138,7 @@ export default function CharacterSelectionScreen({
 
   const myChosenCharacter = myPlayer?.character_name ?? null;
 
-  const calculateSecondsLeft = () => {
-    if (!currentCharacterTurnStartedAt || currentCharacterTurnOrder === null) {
-      return CHARACTER_SELECTION_SECONDS;
-    }
-
-    const startedAtMs = new Date(currentCharacterTurnStartedAt).getTime();
-    const deadlineMs = startedAtMs + CHARACTER_SELECTION_SECONDS * 1000;
-    const nowMs = Date.now();
-
-    return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
-  };
-
-  const [secondsLeft, setSecondsLeft] = useState<number>(calculateSecondsLeft);
+  const [secondsLeft, setSecondsLeft] = useState<number>(() => calculateSecondsLeft());
 
   const playHoverSound = () => {
     if (!canInteract) return;
@@ -170,7 +181,7 @@ export default function CharacterSelectionScreen({
   }, [currentCharacterTurnStartedAt, currentCharacterTurnOrder]);
 
   useEffect(() => {
-    if (!timeExpired) return;
+    if (!isExpiredByClock) return;
     if (!currentCharacterTurnStartedAt) return;
     if (!currentPicker) return;
     if (currentPicker.character_name !== null) return;
@@ -221,14 +232,14 @@ export default function CharacterSelectionScreen({
     currentPicker,
     currentTurnKey,
     onAutoSelectCharacter,
-    timeExpired,
+    isExpiredByClock,
     autoRetryTick,
   ]);
 
   const statusTitle = (() => {
-    if (isAutoSelecting && timeExpired) return "Asignando personaje automáticamente";
-    if (isMyTurnToPick && !timeExpired && !isAutoSelecting) return "Es tu turno de elegir";
-    if (timeExpired && !isAutoSelecting) return "Tiempo agotado";
+    if (isAutoSelecting && isExpiredByClock) return "Asignando personaje automáticamente";
+    if (canInteract) return "Es tu turno de elegir";
+    if (isExpiredByClock && !isAutoSelecting) return "Tiempo agotado";
     if (currentPicker?.character_name) return "Turno resuelto";
     return "Esperando selección";
   })();
@@ -238,11 +249,11 @@ export default function CharacterSelectionScreen({
       return "El tiempo terminó y el sistema está reclamando un campeón disponible para que la expedición continúe sin pausas.";
     }
 
-    if (isMyTurnToPick && !timeExpired) {
+    if (canInteract) {
       return "El salón de campeones está abierto para ti. Reclama tu personaje antes de que otro goblin ocupe su lugar.";
     }
 
-    if (timeExpired) {
+    if (isExpiredByClock) {
       return "Se acabó el tiempo de este turno. En cualquier momento se asignará un personaje disponible y avanzará el siguiente jugador.";
     }
 
@@ -256,8 +267,8 @@ export default function CharacterSelectionScreen({
   })();
 
   const phaseLabel = (() => {
-    if (isAutoSelecting && timeExpired) return "Autoasignando";
-    if (timeExpired && !isAutoSelecting) return "Tiempo agotado";
+    if (isAutoSelecting && isExpiredByClock) return "Autoasignando";
+    if (isExpiredByClock && !isAutoSelecting) return "Tiempo agotado";
     if (currentPicker?.character_name) return "Turno resuelto";
     return "Selección abierta";
   })();
@@ -300,7 +311,7 @@ export default function CharacterSelectionScreen({
                       {selectedCharactersCount}/{players.length} elegidos
                     </span>
                     <span className="rounded-full border border-[#F0D7E6]/10 bg-[#171018] px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#F7EAF2]">
-                      Tiempo: {secondsLeft}s
+                      Tiempo: {isExpiredByClock ? "0s" : `${secondsLeft}s`}
                     </span>
                   </div>
                 </div>
@@ -373,7 +384,7 @@ export default function CharacterSelectionScreen({
                             Reloj
                           </p>
                           <p className="mt-2 text-xl font-black text-[#FFF8FB]">
-                            {timeExpired ? "0s" : `${secondsLeft}s`}
+                            {isExpiredByClock ? "0s" : `${secondsLeft}s`}
                           </p>
                         </div>
                       </div>
@@ -450,7 +461,7 @@ export default function CharacterSelectionScreen({
 
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-[#FFCB68]/14 bg-[#FFCB68]/10 px-4 py-2 text-sm font-black text-[#FFE7B1]">
-                        Tiempo: {secondsLeft}s
+                        Tiempo: {isExpiredByClock ? "0s" : `${secondsLeft}s`}
                       </span>
                       <span className="rounded-full border border-[#F0D7E6]/10 bg-[#171018] px-4 py-2 text-sm font-semibold text-[#F7EAF2]">
                         Disponibles: {availableCharacters.length}
@@ -505,7 +516,7 @@ export default function CharacterSelectionScreen({
                                 <span className="rounded-full border border-[#FFCB68]/14 bg-[#FFCB68]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#FFE7B1]">
                                   Disponible
                                 </span>
-                              ) : timeExpired ? (
+                              ) : isExpiredByClock ? (
                                 <span className="rounded-full border border-[#6EC5FF]/14 bg-[#6EC5FF]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#D8F1FF]">
                                   Autoasignando...
                                 </span>
