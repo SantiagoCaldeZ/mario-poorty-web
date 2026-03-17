@@ -10,7 +10,7 @@ import PlayersPanel from "@/components/game/PlayersPanel";
 import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
 import OrderSelectionScreen from "@/components/game/OrderSelectionScreen";
 import CharacterRevealScreen from "@/components/game/CharacterRevealScreen";
-import { getTileForPosition } from "@/lib/board";
+import { getTileLandingPreview } from "@/lib/board";
 
 type MatchData = {
   id: string;
@@ -447,24 +447,24 @@ export default function GamePage() {
 
   const handleRollResolved = useCallback(
     async (turnResult: PlayTurnResult) => {
-      const landedTile = currentMatchId
-        ? getTileForPosition(currentMatchId, turnResult.updated_position)
+      const landingPreview = currentMatchId
+        ? getTileLandingPreview(currentMatchId, turnResult.updated_position)
         : null;
-
-      const landedText = landedTile
-        ? ` Caíste en ${landedTile.label}.`
+  
+      const landingText = landingPreview
+        ? ` ${landingPreview.previewText}`
         : "";
-
+  
       if (turnResult.match_finished) {
         setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!${landedText}`
+          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!${landingText}`
         );
       } else {
         setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.${landedText}`
+          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.${landingText}`
         );
       }
-
+  
       await loadGame(false);
     },
     [currentMatchId, loadGame]
