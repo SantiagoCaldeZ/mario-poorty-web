@@ -1,0 +1,350 @@
+alter table public.matches
+add column if not exists order_selection_deadline_at timestamptz;
+
+alter table public.matches
+add column if not exists order_finalized_at timestamptz;
+
+update public.matches
+set order_selection_deadline_at = coalesce(
+  order_selection_deadline_at,
+  started_at + interval '15 seconds'
+)
+where phase = 'choosing_order'
+  and order_selection_deadline_at is null;
+
+drop function if exists public.start_match_from_lobby(uuid);
+
+create or replace function public.start_match_from_lobby(
+  target_lobby_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  lobby_host_id uuid;
+  lobby_status text;
+  player_count integer;
+  new_match_id uuid;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Debes iniciar sesión para iniciar la partida.';
+  end if;
+
+  select l.host_id, l.status
+  into lobby_host_id, lobby_status
+  from public.lobbies l
+  where l.id = target_lobby_id;
+
+  if not found then
+    raise exception 'El lobby no existe.';
+  end if;
+
+  if lobby_host_id <> current_user_id then
+    raise exception 'Solo el host puede iniciar la partida.';
+  end if;
+
+  if lobby_status <> 'waiting' then
+    raise exception 'La sala no está disponible para iniciar una partida.';
+  end if;
+
+  select count(*)
+  into player_count
+  from public.lobby_players lp
+  where lp.lobby_id = target_lobby_id;
+
+  if player_count < 2 then
+    raise exception 'Se necesitan al menos 2 jugadores para iniciar la partida.';
+  end if;
+
+  if player_count > 6 then
+    raise exception 'La sala supera el máximo permitido de 6 jugadores.';
+  end if;
+
+  if exists (
+    select 1
+    from public.matches m
+    where m.lobby_id = target_lobby_id
+  ) then
+    raise exception 'Ya existe una partida creada para este lobby.';
+  end if;
+
+  insert into public.matches (
+    lobby_id,
+    status,
+    phase,
+    current_turn_user_id,
+    turn_number,
+    winner_user_id,
+    started_at,
+    finished_at,
+    order_target_number,
+    order_selection_deadline_at,
+    order_finalized_at,
+    current_character_turn_order,
+    current_character_turn_started_at
+  )
+  values (
+    target_lobby_id,
+    'active',
+    'choosing_order',
+    null,
+    0,
+    null,
+    now(),
+    null,
+    null,
+    now() + interval '15 seconds',
+    null,
+    null,
+    null
+  )
+  returning id into new_match_id;
+
+  insert into public.match_players (
+    match_id,
+    user_id,
+    character_name,
+    turn_order,
+    board_position,
+    is_finished
+  )
+  select
+    new_match_id,
+    ordered_players.user_id,
+    null,
+    ordered_players.turn_order,
+    0,
+    false
+  from (
+    select
+      lp.user_id,
+      row_number() over (order by lp.joined_at asc) as turn_order
+    from public.lobby_players lp
+    where lp.lobby_id = target_lobby_id
+  ) as ordered_players;
+
+  update public.lobbies
+  set status = 'in_game'
+  where id = target_lobby_id;
+
+  return new_match_id;
+end;
+$$;
+
+grant execute on function public.start_match_from_lobby(uuid) to authenticated;
+
+drop function if exists public.finalize_turn_order(uuid);
+
+create or replace function public.finalize_turn_order(
+  target_match_id uuid
+)
+returns table (
+  target_number integer,
+  first_turn_user_id uuid,
+  finalized boolean,
+  next_phase text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  match_row public.matches%rowtype;
+  total_players integer;
+  submitted_players integer;
+  final_number integer;
+  first_user uuid;
+begin
+  perform pg_advisory_xact_lock(hashtext(target_match_id::text));
+
+  current_user_id := auth.uid();
+
+  if current_user_id is not null then
+    perform 1
+    from public.match_players mp
+    where mp.match_id = target_match_id
+      and mp.user_id = current_user_id;
+
+    if not found then
+      raise exception 'No perteneces a esta partida.';
+    end if;
+  end if;
+
+  select *
+  into match_row
+  from public.matches m
+  where m.id = target_match_id
+  for update;
+
+  if not found then
+    raise exception 'La partida no existe.';
+  end if;
+
+  if match_row.phase <> 'choosing_order' then
+    return query
+    select
+      match_row.order_target_number,
+      (
+        select mp.user_id
+        from public.match_players mp
+        where mp.match_id = target_match_id
+          and mp.turn_order = 1
+        limit 1
+      ),
+      match_row.order_finalized_at is not null,
+      match_row.phase;
+
+    return;
+  end if;
+
+  if match_row.order_finalized_at is not null then
+    return query
+    select
+      match_row.order_target_number,
+      (
+        select mp.user_id
+        from public.match_players mp
+        where mp.match_id = target_match_id
+          and mp.turn_order = 1
+        limit 1
+      ),
+      true,
+      'choosing_character'::text;
+
+    return;
+  end if;
+
+  select count(*)
+  into total_players
+  from public.match_players mp
+  where mp.match_id = target_match_id;
+
+  select count(*)
+  into submitted_players
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.selected_order_number is not null;
+
+  if total_players = 0 then
+    raise exception 'La partida no tiene jugadores.';
+  end if;
+
+  if coalesce(match_row.order_selection_deadline_at, now()) > now()
+     and submitted_players < total_players then
+    return query
+    select
+      match_row.order_target_number,
+      null::uuid,
+      false,
+      'choosing_order'::text;
+
+    return;
+  end if;
+
+  update public.match_players
+  set
+    selected_order_number = floor(random() * 1000 + 1)::int,
+    order_number_submitted_at = coalesce(order_number_submitted_at, now())
+  where match_id = target_match_id
+    and selected_order_number is null;
+
+  final_number := coalesce(
+    match_row.order_target_number,
+    floor(random() * 1000 + 1)::int
+  );
+
+  update public.matches
+  set
+    order_target_number = final_number,
+    order_finalized_at = coalesce(order_finalized_at, now())
+  where id = target_match_id;
+
+  with ranked as (
+    select
+      mp.id,
+      row_number() over (
+        order by
+          abs(mp.selected_order_number - final_number),
+          mp.selected_order_number,
+          mp.joined_at,
+          mp.user_id
+      ) as new_turn_order
+    from public.match_players mp
+    where mp.match_id = target_match_id
+  )
+  update public.match_players mp
+  set turn_order = -ranked.new_turn_order
+  from ranked
+  where mp.id = ranked.id;
+
+  update public.match_players
+  set turn_order = -turn_order
+  where match_id = target_match_id;
+
+  select mp.user_id
+  into first_user
+  from public.match_players mp
+  where mp.match_id = target_match_id
+    and mp.turn_order = 1
+  limit 1;
+
+  update public.matches
+  set
+    phase = 'choosing_character',
+    status = 'active',
+    current_character_turn_order = 1,
+    current_character_turn_started_at = null,
+    current_turn_user_id = null,
+    turn_number = 0
+  where id = target_match_id;
+
+  return query
+  select
+    final_number,
+    first_user,
+    true,
+    'choosing_character'::text;
+end;
+$$;
+
+grant execute on function public.finalize_turn_order(uuid) to authenticated;
+
+drop function if exists public.finalize_expired_order_selections();
+
+create or replace function public.finalize_expired_order_selections()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  match_row record;
+  result_row record;
+  finalized_count integer := 0;
+begin
+  for match_row in
+    select m.id
+    from public.matches m
+    where m.phase = 'choosing_order'
+      and m.order_finalized_at is null
+      and m.order_selection_deadline_at is not null
+      and m.order_selection_deadline_at <= now()
+  loop
+    select *
+    into result_row
+    from public.finalize_turn_order(match_row.id);
+
+    if coalesce(result_row.finalized, false) then
+      finalized_count := finalized_count + 1;
+    end if;
+  end loop;
+
+  return finalized_count;
+end;
+$$;
