@@ -1,0 +1,61 @@
+create or replace function public.apply_tile_chain_position(
+  target_match_id uuid,
+  final_position integer
+)
+returns table (
+  updated_position integer,
+  match_finished boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid;
+  player_row public.match_players%rowtype;
+  clamped_position integer;
+begin
+  current_user_id := auth.uid();
+
+  if current_user_id is null then
+    raise exception 'Usuario no autenticado.';
+  end if;
+
+  select *
+  into player_row
+  from public.match_players
+  where match_id = target_match_id
+    and user_id = current_user_id
+  for update;
+
+  if not found then
+    raise exception 'No perteneces a esta partida.';
+  end if;
+
+  clamped_position := greatest(0, least(30, final_position));
+
+  update public.match_players
+  set
+    board_position = clamped_position,
+    is_finished = (clamped_position = 30)
+  where id = player_row.id;
+
+  if clamped_position = 30 then
+    update public.matches
+    set
+      status = 'finished',
+      phase = 'finished',
+      winner_user_id = current_user_id,
+      current_turn_user_id = null,
+      finished_at = now()
+    where id = target_match_id;
+  end if;
+
+  return query
+  select
+    clamped_position,
+    (clamped_position = 30);
+end;
+$$;
+
+grant execute on function public.apply_tile_chain_position(uuid, integer) to authenticated;
