@@ -10,7 +10,12 @@ import PlayersPanel from "@/components/game/PlayersPanel";
 import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
 import OrderSelectionScreen from "@/components/game/OrderSelectionScreen";
 import CharacterRevealScreen from "@/components/game/CharacterRevealScreen";
-import { getTileLandingPreview } from "@/lib/board";
+import TileEventModal from "@/components/game/tile-events/TileEventModal";
+import type { BoardTile, TileHandlerResult } from "@/lib/tiles/types";
+import {
+  resolveTileEvent,
+  type TileResolutionStep,
+} from "@/lib/tiles/engine";
 
 type MatchData = {
   id: string;
@@ -81,6 +86,10 @@ export default function GamePage() {
   const [orderFinalizing, setOrderFinalizing] = useState(false);
   const [selectionSubmitting, setSelectionSubmitting] = useState(false);
   const [selectingCharacter, setSelectingCharacter] = useState<string | null>(null);
+  const [tileEventOpen, setTileEventOpen] = useState(false);
+  const [tileEventTile, setTileEventTile] = useState<BoardTile | null>(null);
+  const [tileEventResult, setTileEventResult] = useState<TileHandlerResult | null>(null);
+  const [tileEventSteps, setTileEventSteps] = useState<TileResolutionStep[]>([]);
 
   const currentCharacterPickerUserId = useMemo(() => {
     if (!match) return null;
@@ -431,6 +440,10 @@ export default function GamePage() {
 
     setServerError("");
     setTurnMessage("");
+    setTileEventOpen(false);
+    setTileEventTile(null);
+    setTileEventResult(null);
+    setTileEventSteps([]);
 
     const { data, error } = await supabase.rpc("play_turn", {
       target_match_id: currentMatchId,
@@ -447,27 +460,58 @@ export default function GamePage() {
 
   const handleRollResolved = useCallback(
     async (turnResult: PlayTurnResult) => {
-      const landingPreview = currentMatchId
-        ? getTileLandingPreview(currentMatchId, turnResult.updated_position)
-        : null;
-  
-      const landingText = landingPreview
-        ? ` ${landingPreview.previewText}`
+      if (!currentMatchId) {
+        await loadGame(false);
+        return;
+      }
+
+      const previousPosition =
+        myPlayer?.board_position ??
+        Math.max(0, turnResult.updated_position - turnResult.rolled_value);
+
+      const resolvedEvent = resolveTileEvent({
+        matchId: currentMatchId,
+        playerId: currentUserId ?? "unknown-player",
+        landedPosition: turnResult.updated_position,
+        previousPosition,
+        rolledValue: turnResult.rolled_value,
+        triggeredByChain: false,
+        triggeredByPendingMinigameRetry: false,
+      });
+
+      const landingText = resolvedEvent.preview
+        ? ` ${resolvedEvent.preview.previewText}`
         : "";
-  
+
+      const chainSummary =
+        resolvedEvent.wasChained && resolvedEvent.steps.length > 1
+          ? ` Resolución encadenada: ${resolvedEvent.steps.length} pasos.`
+          : "";
+
       if (turnResult.match_finished) {
         setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!${landingText}`
+          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!${landingText}${chainSummary}`
         );
       } else {
         setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.${landingText}`
+          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.${landingText}${chainSummary}`
         );
       }
-  
+
+      if (
+        resolvedEvent.shouldOpenModal &&
+        resolvedEvent.preview.tile &&
+        resolvedEvent.result
+      ) {
+        setTileEventTile(resolvedEvent.preview.tile);
+        setTileEventResult(resolvedEvent.result);
+        setTileEventSteps(resolvedEvent.steps);
+        setTileEventOpen(true);
+      }
+
       await loadGame(false);
     },
-    [currentMatchId, loadGame]
+    [currentMatchId, currentUserId, loadGame, myPlayer?.board_position]
   );
 
   const handleSubmitOrderNumber = useCallback(async (forcedNumber?: number) => {
@@ -844,6 +888,14 @@ export default function GamePage() {
           </div>
         </section>
       </div>
+      <TileEventModal
+        isOpen={tileEventOpen}
+        tile={tileEventTile}
+        result={tileEventResult}
+        steps={tileEventSteps}
+        onClose={() => setTileEventOpen(false)}
+        onContinue={() => setTileEventOpen(false)}
+      />
     </main>
   );
 }
