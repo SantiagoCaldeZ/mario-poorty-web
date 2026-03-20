@@ -1,37 +1,63 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import GameBoard from "@/components/game/GameBoard";
-import GameSidebar from "@/components/game/GameSidebar";
-import MatchSummary from "@/components/game/MatchSummary";
-import PlayersPanel from "@/components/game/PlayersPanel";
-import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
-import OrderSelectionScreen from "@/components/game/OrderSelectionScreen";
-import CharacterRevealScreen from "@/components/game/CharacterRevealScreen";
-import TileEventModal from "@/components/game/tile-events/TileEventModal";
-import type { BoardTile, TileHandlerResult } from "@/lib/tiles/types";
+import { CHARACTER_OPTIONS } from "@/lib/characters";
+import TurnController from "@/components/game/turn/TurnController";
 import {
-  resolveTileEvent,
-  type TileResolutionStep,
-} from "@/lib/tiles/engine";
+  buildPendingMinigameRetryPlan,
+  buildTurnPlan,
+  type PlayerBoardState,
+} from "@/lib/game/turn-engine/build-turn-plan";
+import type {
+  MinigameStartedEvent,
+  TurnPlan,
+} from "@/lib/game/turn-engine/turn-event-types";
+import type { MinigameKey } from "@/lib/game/board/tile-types";
+
+import RawGameBoard from "@/components/game/GameBoard";
+import RawGameSidebar from "@/components/game/GameSidebar";
+import RawPlayersPanel from "@/components/game/PlayersPanel";
+import RawMatchSummary from "@/components/game/MatchSummary";
+import RawCharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
+import RawOrderSelectionScreen from "@/components/game/OrderSelectionScreen";
+
+const GameBoard = RawGameBoard as unknown as ComponentType<any>;
+const GameSidebar = RawGameSidebar as unknown as ComponentType<any>;
+const PlayersPanel = RawPlayersPanel as unknown as ComponentType<any>;
+const MatchSummary = RawMatchSummary as unknown as ComponentType<any>;
+const CharacterSelectionScreen =
+  RawCharacterSelectionScreen as unknown as ComponentType<any>;
+const OrderSelectionScreen =
+  RawOrderSelectionScreen as unknown as ComponentType<any>;
+
+type MatchPhase =
+  | "choosing_order"
+  | "choosing_character"
+  | "active"
+  | "finished"
+  | "abandoned";
+
+type MatchStatus = "active" | "finished" | "abandoned";
 
 type MatchData = {
   id: string;
   lobby_id: string;
-  status: "active" | "finished" | "abandoned";
-  phase: "choosing_order" | "choosing_character" | "active" | "finished" | "abandoned";
+  status: MatchStatus;
+  phase: MatchPhase | null;
   order_target_number: number | null;
-  order_selection_deadline_at: string | null;
-  order_finalized_at: string | null;
   current_turn_user_id: string | null;
   turn_number: number;
   winner_user_id: string | null;
-  started_at: string;
+  started_at: string | null;
   finished_at: string | null;
   current_character_turn_order: number | null;
   current_character_turn_started_at: string | null;
+  // campos nuevos opcionales para cuando hagas los scripts
+  board_version?: string | null;
+  turn_state?: string | null;
+  active_minigame_session_id?: string | null;
 };
 
 type MatchPlayerRow = {
@@ -46,707 +72,550 @@ type MatchPlayerRow = {
   selected_order_number: number | null;
   order_number_submitted_at: string | null;
   username: string | null;
+
+  // campos viejos o opcionales que pueden existir según tu estado actual
+  selected_character_id?: string | null;
+  final_position?: number | null;
+  is_winner?: boolean | null;
+
+  // campos nuevos opcionales para el rediseño
+  shield_charges?: number | null;
+  skip_turns?: number | null;
+  next_roll_bonus?: number | null;
+  next_roll_max?: number | null;
+  pending_minigame_key?: MinigameKey | null;
+  pending_minigame_tile_index?: number | null;
+  pending_minigame_session_id?: string | null;
 };
 
-type PublicProfileRow = {
+type PlayTurnRpcResult = {
+  turn_plan?: TurnPlan | null;
+  raw_roll?: number | null;
+  roll?: number | null;
+  next_player_user_id?: string | null;
+  winner_user_id?: string | null;
+  [key: string]: unknown;
+};
+
+type UserSummary = {
   id: string;
-  username: string | null;
-  avatar_url: string | null;
+  email: string | null;
 };
 
-type PlayTurnResult = {
-  rolled_value: number;
-  updated_position: number;
-  next_turn_user_id: string | null;
-  updated_turn_number: number;
-  match_finished: boolean;
-};
+function randomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
-type FinalizeOrderResult = {
-  target_number: number | null;
-  first_turn_user_id: string | null;
-  finalized: boolean;
-  next_phase: string | null;
-};
+function getPhase(match: MatchData | null): MatchPhase {
+  if (!match) return "abandoned";
+  if (match.phase) return match.phase;
+  if (match.status === "finished") return "finished";
+  if (match.status === "abandoned") return "abandoned";
+  return "active";
+}
 
-export default function GamePage() {
-  const params = useParams();
-  const router = useRouter();
+function sortPlayers(players: MatchPlayerRow[]): MatchPlayerRow[] {
+  return [...players].sort((a, b) => {
+    if (a.turn_order !== b.turn_order) {
+      return a.turn_order - b.turn_order;
+    }
+    return a.joined_at.localeCompare(b.joined_at);
+  });
+}
 
-  const lobbyId = typeof params.id === "string" ? params.id : null;
+function getNextPlayerUserId(
+  players: MatchPlayerRow[],
+  currentTurnUserId: string | null,
+): string | null {
+  const ordered = sortPlayers(players).filter((player) => !player.is_finished);
 
-  const [loading, setLoading] = useState(true);
-  const [serverError, setServerError] = useState("");
-  const [turnMessage, setTurnMessage] = useState("");
-  const [match, setMatch] = useState<MatchData | null>(null);
-  const [players, setPlayers] = useState<MatchPlayerRow[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [selectedOrderNumber, setSelectedOrderNumber] = useState("");
-  const [orderSubmitting, setOrderSubmitting] = useState(false);
-  const [orderFinalizing, setOrderFinalizing] = useState(false);
-  const [selectionSubmitting, setSelectionSubmitting] = useState(false);
-  const [selectingCharacter, setSelectingCharacter] = useState<string | null>(null);
-  const [tileEventOpen, setTileEventOpen] = useState(false);
-  const [tileEventTile, setTileEventTile] = useState<BoardTile | null>(null);
-  const [tileEventResult, setTileEventResult] = useState<TileHandlerResult | null>(null);
-  const [tileEventSteps, setTileEventSteps] = useState<TileResolutionStep[]>([]);
+  if (ordered.length === 0) return null;
+  if (!currentTurnUserId) return ordered[0]?.user_id ?? null;
 
-  const currentCharacterPickerUserId = useMemo(() => {
-    if (!match) return null;
-    if (match.phase !== "choosing_character") return null;
-    if (match.current_character_turn_order === null) return null;
-
-    return (
-      players.find(
-        (player) => player.turn_order === match.current_character_turn_order
-      )?.user_id ?? null
-    );
-  }, [
-    match?.phase,
-    match?.current_character_turn_order,
-    players,
-  ]);
-
-  const characterTurnResetKey = [
-    match?.id ?? "none",
-    match?.phase ?? "none",
-    match?.current_character_turn_order ?? "none",
-    match?.current_character_turn_started_at ?? "none",
-    currentCharacterPickerUserId ?? "none",
-  ].join(":");
-
-  useEffect(() => {
-    setServerError("");
-    setSelectionSubmitting(false);
-    setSelectingCharacter(null);
-  }, [characterTurnResetKey]);
-
-  const [characterRevealState, setCharacterRevealState] = useState<"hidden" | "showing">(
-    "hidden"
+  const currentIndex = ordered.findIndex(
+    (player) => player.user_id === currentTurnUserId,
   );
 
-  const myPlayer = players.find((player) => player.user_id === currentUserId) ?? null;
-  const myChosenCharacterName = myPlayer?.character_name ?? null;
+  if (currentIndex === -1) {
+    return ordered[0]?.user_id ?? null;
+  }
 
-  const activeMatchIdRef = useRef<string | null>(null);
+  const nextIndex = (currentIndex + 1) % ordered.length;
+  return ordered[nextIndex]?.user_id ?? null;
+}
 
-  const selectedOrderNumberRef = useRef(selectedOrderNumber);
+function mapPlayerBoardState(player: MatchPlayerRow): PlayerBoardState {
+  return {
+    position: player.board_position ?? 0,
+    shieldCharges: player.shield_charges ?? 0,
+    skipTurns: player.skip_turns ?? 0,
+    nextRollBonus: player.next_roll_bonus ?? 0,
+    nextRollMax: player.next_roll_max ?? null,
+    pendingMinigameKey: player.pending_minigame_key ?? null,
+    pendingMinigameTileIndex: player.pending_minigame_tile_index ?? null,
+    pendingMinigameSessionId: player.pending_minigame_session_id ?? null,
+  };
+}
 
-  useEffect(() => {
-    selectedOrderNumberRef.current = selectedOrderNumber;
-  }, [selectedOrderNumber]);
+function mergeAnimatedPositions(
+  players: MatchPlayerRow[],
+  animatedPositions: Record<string, number>,
+): MatchPlayerRow[] {
+  return players.map((player) => ({
+    ...player,
+    board_position:
+      animatedPositions[player.user_id] ?? player.board_position ?? 0,
+  }));
+}
 
+function findFirstAvailableCharacter(players: MatchPlayerRow[]): string | null {
+  const used = new Set(
+    players
+      .map((player) => player.character_name)
+      .filter((value): value is string => Boolean(value)),
+  );
 
-  const loadPlayersSnapshot = useCallback(async (matchId: string) => {
-    const { data: playerData, error: playerError } = await supabase
-      .from("match_players")
-      .select(
-        "id, match_id, user_id, character_name, turn_order, board_position, is_finished, joined_at, selected_order_number, order_number_submitted_at"
-      )
-      .eq("match_id", matchId)
-      .order("turn_order", { ascending: true });
-
-    if (playerError) {
-      setServerError(playerError.message);
-      return null;
+  for (const option of CHARACTER_OPTIONS) {
+    if (!used.has(option.name)) {
+      return option.name;
     }
+  }
 
-    const userIds = (playerData ?? []).map((player) => player.user_id);
+  return null;
+}
 
-    const { data: profileData, error: profileError } = await supabase.rpc(
-      "get_public_profiles",
-      { profile_ids: userIds }
-    );
+export default function GamePage() {
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const routeId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
-    if (profileError) {
-      setServerError(profileError.message);
-      return null;
-    }
+  const [currentUser, setCurrentUser] = useState<UserSummary | null>(null);
+  const [match, setMatch] = useState<MatchData | null>(null);
+  const [players, setPlayers] = useState<MatchPlayerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [serverError, setServerError] = useState<string>("");
+  const [turnMessage, setTurnMessage] = useState<string>("");
+  const [latestDiceValue, setLatestDiceValue] = useState<number | null>(null);
+  const [rolling, setRolling] = useState(false);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [characterSubmitting, setCharacterSubmitting] = useState(false);
+  const [currentTurnPlan, setCurrentTurnPlan] = useState<TurnPlan | null>(null);
+  const [playbackState, setPlaybackState] = useState<string>("idle");
+  const [animatedPositions, setAnimatedPositions] = useState<
+    Record<string, number>
+  >({});
+  const [activeMinigameEvent, setActiveMinigameEvent] =
+    useState<MinigameStartedEvent | null>(null);
 
-    const publicProfiles = (profileData ?? []) as PublicProfileRow[];
+  const subscriptionsReadyRef = useRef(false);
 
-    const profilesMap = new Map(
-      publicProfiles.map((profile) => [profile.id, profile])
-    );
+  const phase = useMemo(() => getPhase(match), [match]);
 
-    const mergedPlayers: MatchPlayerRow[] = (playerData ?? []).map((player) => {
-      const profile = profilesMap.get(player.user_id);
+  const currentUserId = currentUser?.id ?? null;
 
-      return {
-        id: player.id,
-        match_id: player.match_id,
-        user_id: player.user_id,
-        character_name: player.character_name,
-        turn_order: player.turn_order,
-        board_position: player.board_position,
-        is_finished: player.is_finished,
-        joined_at: player.joined_at,
-        selected_order_number: player.selected_order_number,
-        order_number_submitted_at: player.order_number_submitted_at,
-        username: profile?.username ?? null,
-      };
-    });
+  const orderedPlayers = useMemo(() => sortPlayers(players), [players]);
 
-    return mergedPlayers;
-  }, []);
+  const me = useMemo(
+    () => orderedPlayers.find((player) => player.user_id === currentUserId) ?? null,
+    [orderedPlayers, currentUserId],
+  );
 
-  const loadGame = useCallback(
-    async (showLoading = false) => {
-      if (!lobbyId) {
-        setServerError("ID de partida inválido.");
-        setLoading(false);
-        return;
-      }
+  const displayPlayers = useMemo(
+    () => mergeAnimatedPositions(orderedPlayers, animatedPositions),
+    [orderedPlayers, animatedPositions],
+  );
 
-      if (showLoading) {
+  const isMyTurn =
+    phase === "active" &&
+    Boolean(currentUserId) &&
+    match?.current_turn_user_id === currentUserId;
+
+  const activeCharacterTurnPlayer = useMemo(() => {
+    if (!match?.current_character_turn_order) return null;
+    return orderedPlayers.find(
+      (player) => player.turn_order === match.current_character_turn_order,
+    ) ?? null;
+  }, [match?.current_character_turn_order, orderedPlayers]);
+
+  const orderScreenData = useMemo(() => {
+    return {
+      mySelectedNumber: me?.selected_order_number ?? null,
+      targetNumber: match?.order_target_number ?? null,
+    };
+  }, [me?.selected_order_number, match?.order_target_number]);
+
+  const reloadGameState = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!routeId) return;
+
+      if (!options?.silent) {
         setLoading(true);
       }
 
-      setServerError("");
+      try {
+        setServerError("");
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        const userResult = await supabase.auth.getUser();
+        const authUser = userResult.data.user;
 
-      if (!session?.user) {
-        router.replace("/");
-        return;
-      }
+        if (!authUser) {
+          router.push("/login");
+          return;
+        }
 
-      const userId = session.user.id;
-      setCurrentUserId(userId);
+        setCurrentUser({
+          id: authUser.id,
+          email: authUser.email ?? null,
+        });
 
-      const { data: matchData, error: matchError } = await supabase
-        .from("matches")
-        .select(
-          "id, lobby_id, status, phase, order_target_number, order_selection_deadline_at, order_finalized_at, current_character_turn_order, current_character_turn_started_at, current_turn_user_id, turn_number, winner_user_id, started_at, finished_at"
-        )
-        .eq("lobby_id", lobbyId)
-        .maybeSingle();
+        // Primero intenta interpretar [id] como match.id; si no, como lobby_id.
+        const directMatchQuery = await supabase
+          .from("matches")
+          .select("*")
+          .eq("id", routeId)
+          .limit(1);
 
-      if (matchError) {
-        setServerError(matchError.message);
-        setLoading(false);
-        return;
-      }
+        let resolvedMatch =
+          (directMatchQuery.data?.[0] as MatchData | undefined) ?? null;
 
-      if (!matchData) {
-        const { data: lobbyData, error: lobbyError } = await supabase
-          .from("lobbies")
-          .select("id, status")
-          .eq("id", lobbyId)
-          .maybeSingle();
+        if (!resolvedMatch) {
+          const lobbyMatchQuery = await supabase
+            .from("matches")
+            .select("*")
+            .eq("lobby_id", routeId)
+            .order("started_at", { ascending: false })
+            .limit(1);
 
-        if (lobbyError) {
-          setServerError(lobbyError.message);
+          resolvedMatch =
+            (lobbyMatchQuery.data?.[0] as MatchData | undefined) ?? null;
+        }
+
+        if (!resolvedMatch) {
+          setMatch(null);
+          setPlayers([]);
+          setServerError("No se encontró una partida asociada a esta ruta.");
+          return;
+        }
+
+        setMatch(resolvedMatch);
+
+        const playersQuery = await supabase
+          .from("match_players")
+          .select("*")
+          .eq("match_id", resolvedMatch.id)
+          .order("turn_order", { ascending: true });
+
+        const resolvedPlayers = (playersQuery.data ?? []) as MatchPlayerRow[];
+
+        setPlayers(resolvedPlayers);
+        setAnimatedPositions(
+          Object.fromEntries(
+            resolvedPlayers.map((player) => [
+              player.user_id,
+              player.board_position ?? 0,
+            ]),
+          ),
+        );
+      } catch (error) {
+        console.error(error);
+        setServerError("Ocurrió un error al cargar la partida.");
+      } finally {
+        if (!options?.silent) {
           setLoading(false);
-          return;
         }
-
-        if (!lobbyData) {
-          setServerError("La partida no existe.");
-          setLoading(false);
-          return;
-        }
-
-        if (lobbyData.status === "waiting") {
-          router.replace(`/lobby/${lobbyId}`);
-          return;
-        }
-
-        if (lobbyData.status === "closed") {
-          router.replace("/home");
-          return;
-        }
-
-        setServerError("La partida todavía no ha sido creada correctamente.");
-        setLoading(false);
-        return;
       }
-
-      activeMatchIdRef.current = matchData.id;
-
-      const { data: membership, error: membershipError } = await supabase
-        .from("match_players")
-        .select("id")
-        .eq("match_id", matchData.id)
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (membershipError) {
-        setServerError("No se pudo validar tu acceso a la partida.");
-        setLoading(false);
-        return;
-      }
-
-      if (!membership) {
-        router.replace("/home");
-        return;
-      }
-
-      const mergedPlayers = await loadPlayersSnapshot(matchData.id);
-
-      if (!mergedPlayers) {
-        setLoading(false);
-        return;
-      }
-
-      setMatch(matchData);
-      setPlayers(mergedPlayers);
-      setLoading(false);
     },
-    [lobbyId, loadPlayersSnapshot, router]
+    [routeId, router],
   );
 
   useEffect(() => {
-    if (!lobbyId) {
-      setServerError("ID de partida inválido.");
-      setLoading(false);
-      return;
-    }
+    void reloadGameState();
+  }, [reloadGameState]);
 
-    let cancelled = false;
+  useEffect(() => {
+    if (!match?.id || subscriptionsReadyRef.current) return;
 
-    const init = async () => {
-      if (cancelled) return;
-      await loadGame(true);
-    };
-
-    init();
-
-    const lobbyChannel = supabase
-      .channel(`game-lobby-${lobbyId}`)
+    const matchChannel = supabase
+      .channel(`game-match-${match.id}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "matches",
+          filter: `id=eq.${match.id}`,
         },
-        async (payload) => {
-          const newRow = payload.new as { lobby_id?: string } | undefined;
-          const oldRow = payload.old as { lobby_id?: string } | undefined;
-
-          if (newRow?.lobby_id === lobbyId || oldRow?.lobby_id === lobbyId) {
-            await loadGame(false);
-          }
-        }
+        async () => {
+          await reloadGameState({ silent: true });
+        },
       )
       .subscribe();
 
     const playersChannel = supabase
-      .channel(`game-players-${lobbyId}`)
+      .channel(`game-match-players-${match.id}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "match_players",
+          filter: `match_id=eq.${match.id}`,
         },
-        async (payload) => {
-          const newRow = payload.new as { match_id?: string } | undefined;
-          const oldRow = payload.old as { match_id?: string } | undefined;
-
-          if (
-            (activeMatchIdRef.current && newRow?.match_id === activeMatchIdRef.current) ||
-            (activeMatchIdRef.current && oldRow?.match_id === activeMatchIdRef.current)
-          ) {
-            await loadGame(false);
-          }
-        }
+        async () => {
+          await reloadGameState({ silent: true });
+        },
       )
       .subscribe();
 
+    subscriptionsReadyRef.current = true;
+
     return () => {
-      cancelled = true;
-      supabase.removeChannel(lobbyChannel);
-      supabase.removeChannel(playersChannel);
+      subscriptionsReadyRef.current = false;
+      void supabase.removeChannel(matchChannel);
+      void supabase.removeChannel(playersChannel);
     };
-  }, [lobbyId, loadGame]);
+  }, [match?.id, reloadGameState]);
 
-  useEffect(() => {
-    if (!match?.id) return;
-    if (match.phase !== "choosing_character") return;
-    if (match.current_character_turn_order === null) return;
-    if (match.current_character_turn_started_at) return;
+  const handleGoHome = useCallback(() => {
+    router.push("/home");
+  }, [router]);
 
-    let cancelled = false;
+  const handleSubmitOrderNumber = useCallback(
+    async (selectedNumber: number) => {
+      if (!match || !currentUserId) return;
 
-    const ensureStarted = async () => {
-      const { data, error } = await supabase.rpc(
-        "ensure_character_selection_turn_started",
-        {
-          target_match_id: match.id,
+      try {
+        setOrderSubmitting(true);
+        setServerError("");
+
+        const { error } = await supabase
+          .from("match_players")
+          .update({
+            selected_order_number: selectedNumber,
+            order_number_submitted_at: new Date().toISOString(),
+          })
+          .eq("match_id", match.id)
+          .eq("user_id", currentUserId);
+
+        if (error) {
+          throw error;
         }
-      );
 
-      if (cancelled) return;
-
-      if (error) {
-        setServerError(error.message);
-        return;
+        setTurnMessage(`Elegiste el número ${selectedNumber}.`);
+        await reloadGameState({ silent: true });
+      } catch (error) {
+        console.error(error);
+        setServerError("No se pudo guardar tu número para el orden.");
+      } finally {
+        setOrderSubmitting(false);
       }
-
-      if (data) {
-        setMatch((prev) =>
-          prev
-            ? {
-                ...prev,
-                current_character_turn_started_at: data as string,
-              }
-            : prev
-        );
-      }
-    };
-
-    ensureStarted();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    match?.id,
-    match?.phase,
-    match?.current_character_turn_order,
-    match?.current_character_turn_started_at,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!match?.id || !currentUserId || match.phase !== "active" || !myChosenCharacterName) {
-      setCharacterRevealState("hidden");
-      return;
-    }
-
-    const storageKey = `pwg-character-reveal:${match.id}:${currentUserId}`;
-    const alreadyShown = window.sessionStorage.getItem(storageKey) === "1";
-
-    setCharacterRevealState(alreadyShown ? "hidden" : "showing");
-  }, [match?.id, match?.phase, currentUserId, myChosenCharacterName]);
-
-  const currentTurnPlayer =
-    players.find((player) => player.user_id === match?.current_turn_user_id) ?? null;
-
-  const winnerPlayer =
-    players.find((player) => player.user_id === match?.winner_user_id) ?? null;
-
-  const leadingPlayer =
-  [...players].sort((a, b) => b.board_position - a.board_position)[0] ?? null;
-
-  const isMyTurn = currentUserId === match?.current_turn_user_id;
-  const currentMatchId = match?.id ?? null;
-
-  const handlePlayTurn = useCallback(async (): Promise<PlayTurnResult | null> => {
-    if (!currentMatchId) return null;
-
-    setServerError("");
-    setTurnMessage("");
-    setTileEventOpen(false);
-    setTileEventTile(null);
-    setTileEventResult(null);
-    setTileEventSteps([]);
-
-    const { data, error } = await supabase.rpc("play_turn", {
-      target_match_id: currentMatchId,
-    });
-
-    if (error) {
-      setServerError(error.message);
-      return null;
-    }
-
-    const result = Array.isArray(data) ? data[0] : data;
-    return result ? (result as PlayTurnResult) : null;
-  }, [currentMatchId]);
-
-  const handleRollResolved = useCallback(
-    async (turnResult: PlayTurnResult) => {
-      if (!currentMatchId) {
-        await loadGame(false);
-        return;
-      }
-
-      const previousPosition =
-        myPlayer?.board_position ??
-        Math.max(0, turnResult.updated_position - turnResult.rolled_value);
-
-      const resolvedEvent = resolveTileEvent({
-        matchId: currentMatchId,
-        playerId: currentUserId ?? "unknown-player",
-        landedPosition: turnResult.updated_position,
-        previousPosition,
-        rolledValue: turnResult.rolled_value,
-        triggeredByChain: false,
-        triggeredByPendingMinigameRetry: false,
-      });
-
-      const landingText = resolvedEvent.preview
-        ? ` ${resolvedEvent.preview.previewText}`
-        : "";
-
-      const chainSummary =
-        resolvedEvent.wasChained && resolvedEvent.steps.length > 1
-          ? ` Resolución encadenada: ${resolvedEvent.steps.length} pasos.`
-          : "";
-
-      if (turnResult.match_finished) {
-        setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Llegaste a la meta en la posición ${turnResult.updated_position}. ¡Ganaste la partida!${landingText}${chainSummary}`
-        );
-      } else {
-        setTurnMessage(
-          `Sacaste ${turnResult.rolled_value}. Tu nueva posición es ${turnResult.updated_position}.${landingText}${chainSummary}`
-        );
-      }
-
-      if (
-        resolvedEvent.shouldOpenModal &&
-        resolvedEvent.preview.tile &&
-        resolvedEvent.result
-      ) {
-        setTileEventTile(resolvedEvent.preview.tile);
-        setTileEventResult(resolvedEvent.result);
-        setTileEventSteps(resolvedEvent.steps);
-        setTileEventOpen(true);
-      }
-
-      await loadGame(false);
     },
-    [currentMatchId, currentUserId, loadGame, myPlayer?.board_position]
+    [match, currentUserId, reloadGameState],
   );
 
-  const handleSubmitOrderNumber = useCallback(async (forcedNumber?: number) => {
-    if (!match?.id) return;
-
-    const parsedNumber =
-      typeof forcedNumber === "number"
-        ? forcedNumber
-        : Number(selectedOrderNumberRef.current);
-
-    if (!Number.isInteger(parsedNumber) || parsedNumber < 1 || parsedNumber > 1000) {
-      setServerError("Debes ingresar un número entero entre 1 y 1000.");
-      return;
+  const handleAutoSubmitOrder = useCallback(async (): Promise<"ok" | "retry"> => {
+    try {
+      await handleSubmitOrderNumber(randomInt(1, 1000));
+      return "ok";
+    } catch {
+      return "retry";
     }
+  }, [handleSubmitOrderNumber]);
 
-    setServerError("");
-    setOrderSubmitting(true);
+  const handleSelectCharacter = useCallback(
+    async (characterName: string) => {
+      if (!match || !currentUserId) return;
 
-    const { error } = await supabase.rpc("submit_order_number", {
-      target_match_id: match.id,
-      chosen_number: parsedNumber,
-    });
+      try {
+        setCharacterSubmitting(true);
+        setServerError("");
 
-    setOrderSubmitting(false);
+        const { error } = await supabase
+          .from("match_players")
+          .update({
+            character_name: characterName,
+          })
+          .eq("match_id", match.id)
+          .eq("user_id", currentUserId);
 
-    if (error) {
-      setServerError(error.message);
-      return;
-    }
+        if (error) {
+          throw error;
+        }
 
-    const refreshedPlayers = await loadPlayersSnapshot(match.id);
-
-    if (refreshedPlayers) {
-      setPlayers(refreshedPlayers);
-    } else {
-      setPlayers((prev) =>
-        prev.map((player) =>
-          player.user_id === currentUserId
-            ? {
-                ...player,
-                selected_order_number: parsedNumber,
-                order_number_submitted_at: new Date().toISOString(),
-              }
-            : player
-        )
-      );
-    }
-
-    setSelectedOrderNumber("");
-  }, [currentUserId, loadPlayersSnapshot, match?.id]);
-
-
-  const handleFinalizeOrder = useCallback(async (): Promise<FinalizeOrderResult | null> => {
-    if (!match?.id) return null;
-
-    setServerError("");
-    setOrderFinalizing(true);
-
-    const { data, error } = await supabase.rpc("finalize_turn_order", {
-      target_match_id: match.id,
-    });
-
-    setOrderFinalizing(false);
-
-    if (error) {
-      setServerError(error.message);
-      return null;
-    }
-
-    const result = Array.isArray(data) ? data[0] : data;
-
-    const refreshedPlayers = await loadPlayersSnapshot(match.id);
-
-    if (refreshedPlayers) {
-      setPlayers(refreshedPlayers);
-    }
-
-    if (result?.finalized) {
-      setTimeout(() => {
-        window.location.reload();
-      }, 12010);
-    }
-
-    return {
-      target_number: result?.target_number ?? null,
-      first_turn_user_id: result?.first_turn_user_id ?? null,
-      finalized: Boolean(result?.finalized),
-      next_phase: result?.next_phase ?? null,
-    };
-  }, [loadPlayersSnapshot, match?.id]);
-
-  const handleSelectCharacter = useCallback(async (characterName: string) => {
-    if (!match?.id) return;
-
-    setServerError("");
-    setSelectionSubmitting(true);
-    setSelectingCharacter(characterName);
-
-    const { error } = await supabase.rpc("select_character", {
-      target_match_id: match.id,
-      chosen_character: characterName,
-    });
-
-    setSelectionSubmitting(false);
-    setSelectingCharacter(null);
-
-    if (error) {
-      setServerError(error.message);
-      return;
-    }
-
-    await loadGame(false);
-  }, [loadGame, match?.id]);
-
+        setTurnMessage(`Seleccionaste a ${characterName}.`);
+        await reloadGameState({ silent: true });
+      } catch (error) {
+        console.error(error);
+        setServerError("No se pudo guardar el personaje seleccionado.");
+      } finally {
+        setCharacterSubmitting(false);
+      }
+    },
+    [match, currentUserId, reloadGameState],
+  );
 
   const handleAutoSelectCharacter = useCallback(async (): Promise<"ok" | "retry"> => {
-    if (!match?.id) return "retry";
+    const fallback = findFirstAvailableCharacter(players);
 
-    setServerError("");
-    setSelectionSubmitting(true);
-    setSelectingCharacter("__AUTO__");
-
-    const { error } = await supabase.rpc("auto_select_character", {
-      target_match_id: match.id,
-    });
-
-    setSelectionSubmitting(false);
-    setSelectingCharacter(null);
-
-    if (!error) {
-      await loadGame(false);
-      return "ok";
-    }
-
-    if (error.message === "El tiempo de selección aún no terminó.") {
+    if (!fallback) {
       return "retry";
     }
 
-    const ignorableMessages = [
-      "La partida no está en fase de selección de personajes.",
-      "No hay un turno de selección de personaje definido.",
-      "El jugador actual ya tiene un personaje asignado.",
-    ];
-
-    if (ignorableMessages.includes(error.message)) {
-      await loadGame(false);
+    try {
+      await handleSelectCharacter(fallback);
       return "ok";
+    } catch {
+      return "retry";
+    }
+  }, [players, handleSelectCharacter]);
+
+  const handlePlayTurn = useCallback(async () => {
+    if (!match || !me || !currentUserId || rolling) {
+      return null;
     }
 
-    setServerError(error.message);
-    return "ok";
-  }, [loadGame, match?.id]);
+    try {
+      setRolling(true);
+      setServerError("");
 
-  const handleCharacterRevealDone = useCallback(() => {
-    if (match?.id && currentUserId) {
-      const storageKey = `pwg-character-reveal:${match.id}:${currentUserId}`;
-      window.sessionStorage.setItem(storageKey, "1");
+      const localState = mapPlayerBoardState(me);
+      const nextPlayerUserId = getNextPlayerUserId(
+        players,
+        match.current_turn_user_id,
+      );
+
+      // Caso 1: minijuego pendiente -> no lanza dado, solo reintenta.
+      if (
+        localState.pendingMinigameKey &&
+        localState.pendingMinigameTileIndex !== null
+      ) {
+        const retry = buildPendingMinigameRetryPlan({
+          matchId: match.id,
+          actingUserId: currentUserId,
+          turnNumber: match.turn_number,
+          nextPlayerUserId,
+          state: localState,
+        });
+
+        setCurrentTurnPlan(retry.plan);
+        setTurnMessage("Tienes un minijuego pendiente. Debes reintentarlo.");
+        return retry;
+      }
+
+      // Caso 2: intenta usar tu flujo actual del backend si existe.
+      const rpcResponse = await supabase.rpc("play_turn", {
+        p_match_id: match.id,
+      });
+
+      if (rpcResponse.error) {
+        throw rpcResponse.error;
+      }
+
+      const rawData = rpcResponse.data as
+        | PlayTurnRpcResult
+        | PlayTurnRpcResult[]
+        | null;
+
+      const rpcResult = Array.isArray(rawData)
+        ? (rawData[0] ?? null)
+        : rawData;
+
+      if (rpcResult?.turn_plan) {
+        setCurrentTurnPlan(rpcResult.turn_plan);
+        return rpcResult;
+      }
+
+      // Caso 3: fallback temporal mientras aún no tienes scripts nuevos.
+      // Si el backend viejo no devuelve plan, construimos el plan local
+      // solo para reproducir la nueva UI sin tirar abajo lo que ya te sirve.
+      const rawRoll =
+        (typeof rpcResult?.raw_roll === "number" && rpcResult.raw_roll) ||
+        (typeof rpcResult?.roll === "number" && rpcResult.roll) ||
+        randomInt(1, 6);
+
+      const built = buildTurnPlan({
+        matchId: match.id,
+        actingUserId: currentUserId,
+        turnNumber: match.turn_number,
+        nextPlayerUserId:
+          (rpcResult?.next_player_user_id as string | null | undefined) ??
+          nextPlayerUserId,
+        state: localState,
+        rawRoll,
+        chaosCardIndex: randomInt(0, 5),
+      });
+
+      setCurrentTurnPlan(built.plan);
+      return built;
+    } catch (error) {
+      console.error(error);
+      setServerError(
+        "No se pudo ejecutar el turno con el backend actual. Se dejó preparado el flujo nuevo, pero todavía te faltan los scripts / persistencia nueva.",
+      );
+      return null;
+    } finally {
+      setRolling(false);
+    }
+  }, [match, me, currentUserId, rolling, players]);
+
+  const activeTurnLabel = useMemo(() => {
+    if (phase === "finished") return "La partida terminó.";
+    if (phase === "abandoned") return "La partida fue abandonada.";
+    if (!match || !players.length) return "Cargando partida...";
+
+    const currentTurnPlayer = players.find(
+      (player) => player.user_id === match.current_turn_user_id,
+    );
+
+    if (phase === "choosing_order") {
+      return "Selección de orden en progreso.";
     }
 
-    setCharacterRevealState("hidden");
-  }, [match?.id, currentUserId]);
+    if (phase === "choosing_character") {
+      if (activeCharacterTurnPlayer?.username) {
+        return `Turno de personaje: ${activeCharacterTurnPlayer.username}.`;
+      }
+      return "Selección de personaje en progreso.";
+    }
+
+    if (currentTurnPlayer?.username) {
+      return `Turno de ${currentTurnPlayer.username}.`;
+    }
+
+    if (isMyTurn) {
+      return "Es tu turno.";
+    }
+
+    return "Esperando el siguiente turno.";
+  }, [phase, match, players, activeCharacterTurnPlayer, isMyTurn]);
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-100 px-4">
-        <p className="text-gray-700">Cargando partida...</p>
+      <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+        <div className="mx-auto flex min-h-[60vh] max-w-5xl items-center justify-center">
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/70 px-8 py-6 text-center shadow-2xl">
+            <p className="text-lg font-semibold">Cargando partida...</p>
+            <p className="mt-2 text-sm text-slate-400">
+              Preparando el tablero y el estado actual.
+            </p>
+          </div>
+        </div>
       </main>
     );
   }
 
-  if (match?.phase === "choosing_order") {
+  if (!match) {
     return (
-      <OrderSelectionScreen
-        players={players}
-        currentUserId={currentUserId}
-        selectedOrderNumber={selectedOrderNumber}
-        onSelectedOrderNumberChange={setSelectedOrderNumber}
-        onSubmitOrderNumber={handleSubmitOrderNumber}
-        onFinalizeOrder={handleFinalizeOrder}
-        onGoHome={() => router.push("/home")}
-        orderSubmitting={orderSubmitting}
-        orderFinalizing={orderFinalizing}
-        serverError={serverError}
-        orderTargetNumber={match.order_target_number}
-        orderSelectionDeadlineAt={match.order_selection_deadline_at}
-        orderFinalizedAt={match.order_finalized_at}
-      />
-    );
-  }
-
-  if (match?.phase === "choosing_character") {
-    return (
-      <CharacterSelectionScreen
-        players={players}
-        currentUserId={currentUserId}
-        currentCharacterTurnOrder={match.current_character_turn_order}
-        currentCharacterTurnStartedAt={match.current_character_turn_started_at}
-        orderTargetNumber={match.order_target_number}
-        selectingCharacter={selectingCharacter}
-        onSelectCharacter={handleSelectCharacter}
-        onAutoSelectCharacter={handleAutoSelectCharacter}
-        onGoHome={() => router.push("/home")}
-        selectionSubmitting={selectionSubmitting}
-        serverError={serverError}
-      />
-    );
-  }
-
-  if (
-    match?.phase === "active" &&
-    characterRevealState === "showing" &&
-    myChosenCharacterName
-  ) {
-    return (
-      <CharacterRevealScreen
-        characterName={myChosenCharacterName}
-        onDone={handleCharacterRevealDone}
-        durationMs={4000}
-      />
-    );
-  }
-
-  if (serverError) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-100 px-4">
-        <div className="w-full max-w-xl rounded-2xl bg-white p-8 shadow-md">
-          <h1 className="text-2xl font-bold text-gray-900">Partida</h1>
-          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-            {serverError}
+      <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+        <div className="mx-auto max-w-3xl rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl">
+          <h1 className="text-2xl font-bold">No se encontró la partida</h1>
+          <p className="mt-3 text-slate-300">
+            {serverError || "La ruta actual no apunta a una partida válida."}
           </p>
-
           <button
             type="button"
-            onClick={() => router.push("/home")}
-            className="mt-6 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 transition hover:bg-gray-50"
+            onClick={handleGoHome}
+            className="mt-6 rounded-2xl border border-slate-700 bg-slate-800 px-5 py-2.5 font-semibold text-slate-100 transition hover:bg-slate-700"
           >
             Volver al inicio
           </button>
@@ -755,146 +624,291 @@ export default function GamePage() {
     );
   }
 
+  if (phase === "choosing_order") {
+    return (
+      <main className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100">
+        <div className="mx-auto max-w-6xl">
+          {serverError && (
+            <div className="mb-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {serverError}
+            </div>
+          )}
+
+          <OrderSelectionScreen
+            players={orderedPlayers}
+            currentUserId={currentUserId}
+            orderTargetNumber={orderScreenData.targetNumber}
+            mySelectedOrderNumber={orderScreenData.mySelectedNumber}
+            selectionSubmitting={orderSubmitting}
+            serverError={serverError}
+            onSubmitNumber={handleSubmitOrderNumber}
+            onAutoSubmitOrder={handleAutoSubmitOrder}
+            onGoHome={handleGoHome}
+            turnMessage={activeTurnLabel}
+          />
+        </div>
+      </main>
+    );
+  }
+
+  if (phase === "choosing_character") {
+    return (
+      <main className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100">
+        <div className="mx-auto max-w-6xl">
+          {serverError && (
+            <div className="mb-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {serverError}
+            </div>
+          )}
+
+          <CharacterSelectionScreen
+            players={orderedPlayers}
+            currentUserId={currentUserId}
+            currentCharacterTurnOrder={match.current_character_turn_order}
+            currentCharacterTurnStartedAt={match.current_character_turn_started_at}
+            orderTargetNumber={match.order_target_number}
+            selectingCharacter={me?.character_name ?? null}
+            onSelectCharacter={handleSelectCharacter}
+            onAutoSelectCharacter={handleAutoSelectCharacter}
+            onGoHome={handleGoHome}
+            selectionSubmitting={characterSubmitting}
+            serverError={serverError}
+          />
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#17121C_0%,#0C0F12_38%,#050607_100%)] text-[#F8FFF0]">
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(111,214,255,0.06),transparent_20%,transparent_78%,rgba(255,216,107,0.06))]" />
-      <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(to_right,rgba(240,247,229,0.85)_1px,transparent_1px),linear-gradient(to_bottom,rgba(240,247,229,0.85)_1px,transparent_1px)] [background-size:44px_44px]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(111,214,255,0.10),transparent_18%),radial-gradient(circle_at_85%_14%,rgba(255,123,165,0.08),transparent_18%),radial-gradient(circle_at_20%_80%,rgba(134,240,127,0.08),transparent_16%),radial-gradient(circle_at_80%_78%,rgba(255,216,107,0.08),transparent_16%)]" />
-
-      <div className="pointer-events-none absolute left-[8%] top-[12%] h-40 w-40 rounded-full bg-[#6FD6FF]/10 blur-3xl" />
-      <div className="pointer-events-none absolute right-[10%] top-[12%] h-40 w-40 rounded-full bg-[#FF7BA5]/10 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-[8%] left-[20%] h-32 w-32 rounded-full bg-[#86F07F]/8 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-[10%] right-[18%] h-32 w-32 rounded-full bg-[#FFD86B]/8 blur-3xl" />
-
-      <div className="relative mx-auto max-w-[1900px] px-4 py-6 sm:px-6 lg:px-8">
-        <section className="overflow-hidden rounded-[40px] border border-[#F1F6E8]/10 bg-[linear-gradient(180deg,rgba(14,16,18,0.96),rgba(7,8,10,0.98))] shadow-[0_32px_100px_rgba(0,0,0,0.48)]">
-          <div className="border-b border-[#F1F6E8]/10 bg-[linear-gradient(90deg,rgba(111,214,255,0.08),rgba(134,240,127,0.08),rgba(255,216,107,0.08),rgba(255,123,165,0.07))] px-6 py-6">
-            <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-end 2xl:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-[#6FD6FF]/20 bg-[#6FD6FF]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#DDF7FF]">
-                    Mesa activa
-                  </span>
-                  <span className="rounded-full border border-[#86F07F]/20 bg-[#86F07F]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#E6FFD9]">
-                    Tablero principal
-                  </span>
-                  <span className="rounded-full border border-[#FFD86B]/20 bg-[#FFD86B]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFF0BA]">
-                    Turno #{match?.turn_number ?? "-"}
-                  </span>
-                  <span className="rounded-full border border-[#FF7BA5]/20 bg-[#FF7BA5]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD7E6]">
-                    Estado: {match?.status ?? "-"}
-                  </span>
-                </div>
-
-                <h1 className="mt-4 text-4xl font-black leading-tight text-[#F8FFF0] sm:text-5xl">
-                  Cámara de
-                  <span className="bg-[linear-gradient(135deg,#6FD6FF_0%,#86F07F_28%,#FFD86B_62%,#FF7BA5_100%)] bg-clip-text text-transparent">
-                    {" "}
-                    expedición
-                  </span>
-                </h1>
-
-                <p className="mt-3 max-w-4xl text-base leading-7 text-[#DBE8D6]/80">
-                  Esta pantalla ya está construida alrededor del tablero. El recorrido es
-                  el centro de la experiencia y el resto de paneles ahora acompaña la
-                  partida desde abajo, sin robarle protagonismo.
-                </p>
+    <main className="min-h-screen bg-slate-950 px-4 py-5 text-slate-100">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+        {(serverError || turnMessage) && (
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+            {serverError ? (
+              <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {serverError}
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-[24px] border border-[#6FD6FF]/16 bg-[linear-gradient(135deg,rgba(111,214,255,0.12),rgba(11,18,22,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#DDF7FF]">
-                    Turno actual
-                  </p>
-                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
-                    {currentTurnPlayer?.username ?? "No definido"}
-                    {currentTurnPlayer?.user_id === currentUserId ? " (Tú)" : ""}
-                  </p>
-                </div>
-
-                <div className="rounded-[24px] border border-[#86F07F]/16 bg-[linear-gradient(135deg,rgba(134,240,127,0.12),rgba(12,20,13,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#E6FFD9]">
-                    Tu campeón
-                  </p>
-                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
-                    {myChosenCharacterName ?? "No definido"}
-                  </p>
-                </div>
-
-                <div className="rounded-[24px] border border-[#FFD86B]/16 bg-[linear-gradient(135deg,rgba(255,216,107,0.12),rgba(24,20,10,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FFF0BA]">
-                    Líder actual
-                  </p>
-                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
-                    {leadingPlayer?.username ?? "No definido"}
-                  </p>
-                  <p className="mt-1 text-sm text-[#FFF3CC]/74">
-                    Casilla {leadingPlayer?.board_position ?? "-"}
-                  </p>
-                </div>
-
-                <div className="rounded-[24px] border border-[#FF7BA5]/16 bg-[linear-gradient(135deg,rgba(255,123,165,0.12),rgba(24,11,17,0.98))] px-4 py-4 shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD7E6]">
-                    Ganador
-                  </p>
-                  <p className="mt-2 break-all text-lg font-black leading-tight text-[#F8FFF0]">
-                    {winnerPlayer?.username ?? (match?.status === "finished" ? "Definido" : "Aún no")}
-                  </p>
-                </div>
+            ) : (
+              <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                {turnMessage}
               </div>
+            )}
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-slate-200">
+              {activeTurnLabel}
             </div>
           </div>
+        )}
 
-          <div className="space-y-6 p-6">
-            <GameBoard
-              matchId={match?.id ?? ""}
-              players={players}
+        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+          <aside className="space-y-4">
+            <PlayersPanel
+              players={displayPlayers}
               currentUserId={currentUserId}
-              currentTurnUserId={match?.current_turn_user_id ?? null}
-              winnerUserId={match?.winner_user_id ?? null}
-              matchStatus={match?.status ?? null}
-              turnMessage={turnMessage}
-              isMyTurn={isMyTurn}
-              onPlayTurn={handlePlayTurn}
-              onRollResolved={handleRollResolved}
+              currentTurnUserId={match.current_turn_user_id}
+              winnerUserId={match.winner_user_id}
+              matchStatus={match.status}
             />
 
-            <div className="grid gap-6 2xl:grid-cols-[430px_430px_minmax(0,1fr)]">
-              <GameSidebar
-                matchStatus={match?.status ?? null}
-                turnNumber={match?.turn_number ?? null}
-                currentTurnPlayer={currentTurnPlayer}
-                winnerPlayer={winnerPlayer}
-                turnMessage={turnMessage}
-                isMyTurn={isMyTurn}
-                onPlayTurn={handlePlayTurn}
-                onRollResolved={handleRollResolved}
-                onGoHome={() => router.push("/home")}
-                finishedAt={match?.finished_at ?? null}
-              />
+            <GameSidebar
+              match={match}
+              players={displayPlayers}
+              currentUserId={currentUserId}
+              currentTurnUserId={match.current_turn_user_id}
+              latestDiceValue={latestDiceValue}
+              turnMessage={activeTurnLabel}
+              isMyTurn={isMyTurn}
+              isRolling={rolling}
+              onPlayTurn={handlePlayTurn}
+            />
+          </aside>
 
-              <MatchSummary
-                match={match}
-                currentTurnPlayer={currentTurnPlayer}
-                winnerPlayer={winnerPlayer}
-              />
+          <section className="min-w-0">
+            <GameBoard
+              players={displayPlayers}
+              currentUserId={currentUserId}
+              currentTurnUserId={match.current_turn_user_id}
+              winnerUserId={match.winner_user_id}
+              matchStatus={match.status}
+              turnMessage={activeTurnLabel}
+              isMyTurn={isMyTurn}
+              onPlayTurn={handlePlayTurn}
+              latestDiceValue={latestDiceValue}
+            />
+          </section>
 
-              <PlayersPanel
-                players={players}
-                currentUserId={currentUserId}
-                currentTurnUserId={match?.current_turn_user_id ?? null}
-              />
-            </div>
-          </div>
-        </section>
+          <aside className="space-y-4">
+            <MatchSummary
+              match={match}
+              players={displayPlayers}
+              currentUserId={currentUserId}
+            />
+
+            {me && (
+              <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl">
+                <h2 className="text-lg font-bold">Tu estado actual</h2>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+                    <p className="text-slate-400">Posición</p>
+                    <p className="mt-1 text-lg font-bold">
+                      {animatedPositions[me.user_id] ?? me.board_position ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+                    <p className="text-slate-400">Orden</p>
+                    <p className="mt-1 text-lg font-bold">{me.turn_order}</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+                    <p className="text-slate-400">Escudos</p>
+                    <p className="mt-1 text-lg font-bold">
+                      {me.shield_charges ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+                    <p className="text-slate-400">Turnos perdidos</p>
+                    <p className="mt-1 text-lg font-bold">
+                      {me.skip_turns ?? 0}
+                    </p>
+                  </div>
+                </div>
+
+                {me.pending_minigame_key && (
+                  <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                    Tienes pendiente el minijuego{" "}
+                    <span className="font-semibold">
+                      {me.pending_minigame_key}
+                    </span>
+                    . En tu siguiente turno no lanzarás dado; reintentarás esa
+                    prueba.
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+        </div>
       </div>
-      <TileEventModal
-        isOpen={tileEventOpen}
-        tile={tileEventTile}
-        result={tileEventResult}
-        steps={tileEventSteps}
-        onClose={() => setTileEventOpen(false)}
-        onContinue={() => setTileEventOpen(false)}
+
+      <TurnController
+        plan={currentTurnPlan}
+        enabled={phase === "active"}
+        onPlaybackStateChange={(state) => {
+          setPlaybackState(state);
+        }}
+        onDiceRolled={async (event) => {
+          setLatestDiceValue(event.rawRoll);
+          setTurnMessage(
+            `Dado: ${event.rawRoll}${
+              event.appliedBonus ? `, bonus +${event.appliedBonus}` : ""
+            }${event.appliedMaxCap ? `, máximo ${event.appliedMaxCap}` : ""}.`,
+          );
+        }}
+        onPieceMove={async (event) => {
+          setAnimatedPositions((current) => ({
+            ...current,
+            [event.actorUserId]: event.to,
+          }));
+
+          // pequeño delay para que el tablero tenga tiempo de animar visualmente
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, 450);
+          });
+        }}
+        onTileLanded={async (event) => {
+          setTurnMessage(`Cayó en la casilla ${event.tileIndex}.`);
+        }}
+        onStatusApplied={async (event) => {
+          setTurnMessage(event.message.description);
+        }}
+        onChaosCardDrawn={async (event) => {
+          setTurnMessage(`${event.message.title}: ${event.message.description}`);
+        }}
+        onBlockedByPendingMinigame={async (event) => {
+          setTurnMessage(event.message.description);
+        }}
+        onMinigameStarted={async () => {
+          // lo controla renderActiveMinigame
+        }}
+        onTurnEnded={async (event) => {
+          if (event.endedBecause !== "match_finished") {
+            setTurnMessage("El turno terminó.");
+          }
+          await reloadGameState({ silent: true });
+        }}
+        onMatchFinished={async (event) => {
+          setTurnMessage(event.message.description);
+          await reloadGameState({ silent: true });
+        }}
+        onPlaybackComplete={async () => {
+          await reloadGameState({ silent: true });
+        }}
+        renderActiveMinigame={({ activeMinigame, closeMinigame }) => {
+          if (!activeMinigame.open || !activeMinigame.event) {
+            return null;
+          }
+
+          const event = activeMinigame.event;
+
+          return (
+            <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 p-4">
+              <div className="w-full max-w-2xl rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
+                <div className="border-b border-slate-800 px-6 py-4">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+                    Minijuego activo
+                  </p>
+                  <h2 className="mt-1 text-2xl font-bold text-slate-100">
+                    {event.message.title}
+                  </h2>
+                </div>
+
+                <div className="px-6 py-5">
+                  <p className="text-slate-300">{event.message.description}</p>
+
+                  <div className="mt-5 grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-sm text-slate-200 sm:grid-cols-2">
+                    <div>
+                      <span className="text-slate-400">Clave:</span>{" "}
+                      <span className="font-semibold">{event.minigameKey}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Modo:</span>{" "}
+                      <span className="font-semibold">{event.mode}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Casilla:</span>{" "}
+                      <span className="font-semibold">{event.tileIndex}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Sesión:</span>{" "}
+                      <span className="font-semibold">{event.sessionId}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                    Aquí es donde luego conectarás tu{" "}
+                    <span className="font-semibold">MinigameHost</span> real. Por
+                    ahora te lo dejo preparado para que la nueva arquitectura ya
+                    abra la prueba en el punto correcto del turno.
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 border-t border-slate-800 px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMinigameEvent(event);
+                      closeMinigame();
+                    }}
+                    className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-2 font-semibold text-slate-100 transition hover:bg-slate-800"
+                  >
+                    Cerrar placeholder
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }}
       />
     </main>
   );
