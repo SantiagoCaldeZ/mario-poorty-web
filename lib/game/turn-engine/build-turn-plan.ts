@@ -5,7 +5,6 @@ import {
 } from "../board/board-layout-v1";
 import type { BoardTile, MinigameKey } from "../board/tile-types";
 import { isTrapTile } from "../board/tile-types";
-import type { GameEffect } from "../rules/effect-types";
 import {
   isChaosEffect,
   isMinigameEffect,
@@ -15,13 +14,16 @@ import {
 } from "../rules/effect-types";
 import { resolveTile } from "../rules/tile-resolution";
 import type {
-  ChaosCardRank,
-  ChaosCardSuit,
-  TurnPlan,
   TurnEvent,
+  TurnEventBase,
   TurnMessage,
+  TurnPlan,
 } from "./turn-event-types";
 import { createTurnEventBase } from "./turn-event-types";
+import {
+  CHAOS_DECK_V1,
+  type ChaosCard,
+} from "../board/chaos-deck-v1";
 
 export type PlayerBoardState = {
   position: number;
@@ -64,101 +66,32 @@ type MoveComputation = {
   bounced: boolean;
 };
 
-type ChaosCardEffect =
-  | { type: "move_by"; steps: number; negative: boolean }
-  | { type: "grant_shield"; shieldCharges: number; negative: boolean }
-  | { type: "grant_skip_turns"; skipTurns: number; negative: boolean }
-  | { type: "grant_next_roll_bonus"; nextRollBonus: number; negative: boolean }
-  | { type: "grant_next_roll_max"; nextRollMax: number; negative: boolean };
-
-type ChaosCard = {
-  id: string;
-  suit: ChaosCardSuit;
-  rank: ChaosCardRank;
-  title: string;
-  description: string;
-  effect: ChaosCardEffect;
+type LandingChainInput = {
+  startingTileIndex: number;
+  maxChainDepth: number;
+  chaosCardIndex: number | null;
 };
 
-const CHAOS_DECK_V1: readonly ChaosCard[] = [
-  {
-    id: "chaos-loot-surge",
-    suit: "hearts",
-    rank: "8",
-    title: "Impulso del Botín",
-    description: "La codicia goblin te impulsa 2 casillas hacia adelante.",
-    effect: {
-      type: "move_by",
-      steps: 2,
-      negative: false,
-    },
-  },
-  {
-    id: "chaos-swamp-pull",
-    suit: "spades",
-    rank: "5",
-    title: "Tirón del Pantano",
-    description: "El pantano te arrastra 2 casillas hacia atrás.",
-    effect: {
-      type: "move_by",
-      steps: -2,
-      negative: true,
-    },
-  },
-  {
-    id: "chaos-rune-ward",
-    suit: "diamonds",
-    rank: "Q",
-    title: "Amuleto Rúnico",
-    description: "Obtienes un escudo contra la próxima trampa o efecto negativo.",
-    effect: {
-      type: "grant_shield",
-      shieldCharges: 1,
-      negative: false,
-    },
-  },
-  {
-    id: "chaos-cursed-fog",
-    suit: "clubs",
-    rank: "9",
-    title: "Niebla Maldita",
-    description: "Perderás tu próximo turno.",
-    effect: {
-      type: "grant_skip_turns",
-      skipTurns: 1,
-      negative: true,
-    },
-  },
-  {
-    id: "chaos-lucky-bones",
-    suit: "hearts",
-    rank: "A",
-    title: "Huesos Afortunados",
-    description: "En tu próximo turno, tu dado tendrá +1.",
-    effect: {
-      type: "grant_next_roll_bonus",
-      nextRollBonus: 1,
-      negative: false,
-    },
-  },
-  {
-    id: "chaos-heavy-bones",
-    suit: "spades",
-    rank: "J",
-    title: "Huesos Pesados",
-    description: "En tu próximo turno, tu dado tendrá un máximo de 3.",
-    effect: {
-      type: "grant_next_roll_max",
-      nextRollMax: 3,
-      negative: true,
-    },
-  },
-] as const;
+type LandingChainResult = {
+  awaitingMinigameResult: boolean;
+};
+
+/**
+ * Omit distributivo: esto sí funciona bien sobre unions.
+ */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+type TurnEventPayload = DistributiveOmit<TurnEvent, keyof TurnEventBase>;
 
 export function buildTurnPlan(
   input: BuildTurnPlanInput,
 ): BuildTurnPlanResult {
-  if (input.state.pendingMinigameKey && input.state.pendingMinigameTileIndex !== null) {
+  if (
+    input.state.pendingMinigameKey &&
+    input.state.pendingMinigameTileIndex !== null
+  ) {
     return buildPendingMinigameRetryPlan(input);
   }
 
@@ -179,7 +112,9 @@ export function buildTurnPlan(
   const appliedBonus = input.state.nextRollBonus;
 
   const cappedRoll =
-    appliedMaxCap == null ? input.rawRoll : Math.min(input.rawRoll, appliedMaxCap);
+    appliedMaxCap == null
+      ? input.rawRoll
+      : Math.min(input.rawRoll, appliedMaxCap);
 
   const finalSteps = cappedRoll + appliedBonus;
 
@@ -208,7 +143,6 @@ export function buildTurnPlan(
 
   const landingResult = resolveLandingChain(ctx, {
     startingTileIndex: ctx.nextState.position,
-    initialReason: "dice",
     maxChainDepth: input.maxChainDepth ?? 12,
     chaosCardIndex: input.chaosCardIndex ?? null,
   });
@@ -243,7 +177,10 @@ export function buildTurnPlan(
 export function buildPendingMinigameRetryPlan(
   input: BuildTurnPlanInput,
 ): BuildTurnPlanResult {
-  if (!input.state.pendingMinigameKey || input.state.pendingMinigameTileIndex == null) {
+  if (
+    !input.state.pendingMinigameKey ||
+    input.state.pendingMinigameTileIndex == null
+  ) {
     throw new Error(
       "No se puede construir un reintento de minijuego si el jugador no tiene uno pendiente.",
     );
@@ -315,17 +252,6 @@ export function buildSkippedTurnPlan(
   return finalizeResult(ctx, false, null);
 }
 
-type LandingChainInput = {
-  startingTileIndex: number;
-  initialReason: "dice" | "tile_effect" | "chaos_card";
-  maxChainDepth: number;
-  chaosCardIndex: number | null;
-};
-
-type LandingChainResult = {
-  awaitingMinigameResult: boolean;
-};
-
 function resolveLandingChain(
   ctx: InternalContext,
   input: LandingChainInput,
@@ -374,7 +300,14 @@ function resolveLandingChain(
     const effect = resolution.effects[0];
 
     if (isNoEffect(effect)) {
-      pushTileMessage(ctx, tile, effect.message);
+      pushTileMessage(
+        ctx,
+        tile,
+        effect.message ?? {
+          title: tile.label,
+          description: tile.description,
+        },
+      );
       break;
     }
 
@@ -455,6 +388,7 @@ function resolveLandingChain(
       pushTileMessage(ctx, tile, effect.message);
 
       const chaosCard = pickChaosCard(effect.deckId, input.chaosCardIndex);
+
       pushEvent(ctx, {
         type: "chaos_card_drawn",
         cardId: chaosCard.id,
@@ -467,6 +401,7 @@ function resolveLandingChain(
       });
 
       const chaosHandled = applyChaosCard(ctx, chaosCard);
+
       if (chaosHandled.continueChain) {
         currentTileIndex = ctx.nextState.position;
         chainDepth += 1;
@@ -535,7 +470,10 @@ function applyChaosCard(
 
   switch (card.effect.type) {
     case "move_by": {
-      const movement = computeMoveBySteps(ctx.nextState.position, card.effect.steps);
+      const movement = computeMoveBySteps(
+        ctx.nextState.position,
+        card.effect.steps,
+      );
 
       pushEvent(ctx, {
         type: "piece_move",
@@ -603,6 +541,13 @@ function applyChaosCard(
         },
       });
       return { continueChain: false };
+
+    default: {
+      const exhaustiveCheck: never = card.effect;
+      throw new Error(
+        `Carta del caos no soportada: ${JSON.stringify(exhaustiveCheck)}`,
+      );
+    }
   }
 }
 
@@ -618,6 +563,7 @@ function computeMoveBySteps(from: number, steps: number): MoveComputation {
     }
 
     const overflow = tentative - BOARD_FINISH_INDEX;
+
     return {
       to: BOARD_FINISH_INDEX - overflow,
       bounced: true,
@@ -654,7 +600,7 @@ function pickChaosCard(
       ? 0
       : Math.abs(Math.trunc(requestedIndex)) % CHAOS_DECK_V1.length;
 
-  return CHAOS_DECK_V1[safeIndex];
+  return CHAOS_DECK_V1[safeIndex]!;
 }
 
 function createContext(input: BuildTurnPlanInput): InternalContext {
@@ -687,16 +633,12 @@ function pushTileMessage(
   });
 }
 
-function pushEvent(
-  ctx: InternalContext,
-  event: Omit<TurnEvent, keyof ReturnType<typeof createTurnEventBase>>,
-): void {
-  const type = event.type;
+function pushEvent(ctx: InternalContext, event: TurnEventPayload): void {
   const base = createTurnEventBase(
     ctx.input.turnNumber,
     ctx.order,
     ctx.input.actingUserId,
-    type,
+    event.type,
   );
 
   ctx.events.push({
@@ -743,6 +685,10 @@ function getMinigameMode(minigameKey: MinigameKey): "solo" | "versus" {
     case "totem_ritual":
     case "shaman_runes":
       return "solo";
+    default: {
+      const exhaustiveCheck: never = minigameKey;
+      throw new Error(`Minijuego no soportado: ${exhaustiveCheck}`);
+    }
   }
 }
 

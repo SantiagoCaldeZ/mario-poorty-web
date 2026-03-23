@@ -33,32 +33,6 @@ function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function createRandomCard(index: number): GoblinCard {
-  const rank = randomInt(1, 13);
-  const suit = SUITS[randomInt(0, SUITS.length - 1)];
-  const rankLabel =
-    rank === 1
-      ? "A"
-      : rank === 11
-      ? "J"
-      : rank === 12
-      ? "Q"
-      : rank === 13
-      ? "K"
-      : String(rank);
-
-  return {
-    id: `card-${index}-${rank}-${suit}-${Math.random().toString(36).slice(2, 8)}`,
-    rank,
-    suit,
-    label: `${rankLabel} ${getSuitSymbol(suit)}`,
-  };
-}
-
-function drawHand(size: number): GoblinCard[] {
-  return Array.from({ length: size }, (_, index) => createRandomCard(index));
-}
-
 function getSuitSymbol(suit: CardSuit): string {
   switch (suit) {
     case "hearts":
@@ -70,6 +44,32 @@ function getSuitSymbol(suit: CardSuit): string {
     case "spades":
       return "♠";
   }
+}
+
+function createRandomCard(index: number): GoblinCard {
+  const rank = randomInt(1, 13);
+  const suit = SUITS[randomInt(0, SUITS.length - 1)];
+  const rankLabel =
+    rank === 1
+      ? "A"
+      : rank === 11
+        ? "J"
+        : rank === 12
+          ? "Q"
+          : rank === 13
+            ? "K"
+            : String(rank);
+
+  return {
+    id: `card-${index}-${rank}-${suit}-${Math.random().toString(36).slice(2, 8)}`,
+    rank,
+    suit,
+    label: `${rankLabel} ${getSuitSymbol(suit)}`,
+  };
+}
+
+function drawHand(size: number): GoblinCard[] {
+  return Array.from({ length: size }, (_, index) => createRandomCard(index));
 }
 
 function getSuitClassName(suit: CardSuit): string {
@@ -101,6 +101,14 @@ export default function GoblinCardWarGame({
     if (!isResolved) return null;
     return playerTotal > opponentTotal ? "won" : "lost";
   }, [isResolved, playerTotal, opponentTotal]);
+
+  const playerSlots = useMemo<Array<GoblinCard | null>>(() => {
+    return playerCards.length > 0 ? playerCards : [null, null, null];
+  }, [playerCards]);
+
+  const opponentSlots = useMemo<Array<GoblinCard | null>>(() => {
+    return opponentCards.length > 0 ? opponentCards : [null, null, null];
+  }, [opponentCards]);
 
   async function handleDealCards() {
     setIsDealing(true);
@@ -165,31 +173,27 @@ export default function GoblinCardWarGame({
           <h3 className="text-lg font-bold text-slate-100">Tus cartas</h3>
 
           <div className="mt-4 grid grid-cols-3 gap-3">
-            {(playerCards.length ? playerCards : Array.from({ length: 3 })).map(
-              (card, index) => (
-                <div
-                  key={card ? card.id : `empty-player-${index}`}
-                  className="flex h-32 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-center shadow-lg"
-                >
-                  {card ? (
-                    <div>
-                      <div
-                        className={`text-3xl font-bold ${getSuitClassName(
-                          card.suit,
-                        )}`}
-                      >
-                        {card.label}
-                      </div>
-                      <div className="mt-2 text-sm text-slate-400">
-                        Valor {card.rank}
-                      </div>
+            {playerSlots.map((card, index) => (
+              <div
+                key={card ? card.id : `empty-player-${index}`}
+                className="flex h-32 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-center shadow-lg"
+              >
+                {card ? (
+                  <div>
+                    <div
+                      className={`text-3xl font-bold ${getSuitClassName(card.suit)}`}
+                    >
+                      {card.label}
                     </div>
-                  ) : (
-                    <div className="text-sm text-slate-500">Sin revelar</div>
-                  )}
-                </div>
-              ),
-            )}
+                    <div className="mt-2 text-sm text-slate-400">
+                      Valor {card.rank}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-500">Sin revelar</div>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
@@ -204,31 +208,27 @@ export default function GoblinCardWarGame({
           <h3 className="text-lg font-bold text-slate-100">Rival</h3>
 
           <div className="mt-4 grid grid-cols-3 gap-3">
-            {(opponentCards.length ? opponentCards : Array.from({ length: 3 })).map(
-              (card, index) => (
-                <div
-                  key={card ? card.id : `empty-opponent-${index}`}
-                  className="flex h-32 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-center shadow-lg"
-                >
-                  {card ? (
-                    <div>
-                      <div
-                        className={`text-3xl font-bold ${getSuitClassName(
-                          card.suit,
-                        )}`}
-                      >
-                        {card.label}
-                      </div>
-                      <div className="mt-2 text-sm text-slate-400">
-                        Valor {card.rank}
-                      </div>
+            {opponentSlots.map((card, index) => (
+              <div
+                key={card ? card.id : `empty-opponent-${index}`}
+                className="flex h-32 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-center shadow-lg"
+              >
+                {card ? (
+                  <div>
+                    <div
+                      className={`text-3xl font-bold ${getSuitClassName(card.suit)}`}
+                    >
+                      {card.label}
                     </div>
-                  ) : (
-                    <div className="text-sm text-slate-500">Sin revelar</div>
-                  )}
-                </div>
-              ),
-            )}
+                    <div className="mt-2 text-sm text-slate-400">
+                      Valor {card.rank}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-500">Sin revelar</div>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">

@@ -4,6 +4,8 @@ import {
   BOARD_START_INDEX,
 } from "./tile-types";
 
+export { BOARD_FINISH_INDEX, BOARD_START_INDEX } from "./tile-types";
+
 export const BOARD_LAYOUT_V1: readonly BoardTile[] = [
   {
     index: 0,
