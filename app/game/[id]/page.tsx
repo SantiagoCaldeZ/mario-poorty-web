@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import GameBoard from "@/components/game/GameBoard";
@@ -10,9 +17,9 @@ import PlayersPanel from "@/components/game/PlayersPanel";
 import CharacterSelectionScreen from "@/components/game/CharacterSelectionScreen";
 import OrderSelectionScreen from "@/components/game/OrderSelectionScreen";
 import CharacterRevealScreen from "@/components/game/CharacterRevealScreen";
-import { getTileLandingPreview } from "@/lib/board";
 import TurnController from "@/components/game/turn/TurnController";
 import MinigameHost from "@/components/game/minigames/MinigameHost";
+import { getTileLandingPreview } from "@/lib/board";
 import type {
   ChaosCardDrawnEvent,
   MatchFinishedEvent,
@@ -21,7 +28,9 @@ import type {
   TurnBlockedByPendingMinigameEvent,
   TurnEndedEvent,
   TurnPlan,
+  MinigameStartedEvent,
 } from "@/lib/game/turn-engine/turn-event-types";
+import type { MinigameKey } from "@/lib/game/board/tile-types";
 
 type MatchData = {
   id: string;
@@ -76,6 +85,97 @@ type FinalizeOrderResult = {
   next_phase: string | null;
 };
 
+function buildLegacyMinigameEventFromPreview(
+  tileIndex: number,
+  previewText: string,
+): MinigameStartedEvent | null {
+    const normalized = previewText.toLowerCase();
+
+    const base = {
+      id: `legacy-mg-event-${tileIndex}-${Date.now()}`,
+      turnNumber: 0,
+      order: 0,
+      actorUserId: "legacy-preview",
+      type: "minigame_started" as const,
+      tileIndex,
+      sessionId: `legacy-mg-${tileIndex}-${Date.now()}`,
+      opponentUserId: null,
+    };
+
+    if (normalized.includes("memory de reliquias")) {
+      return {
+        ...base,
+        minigameKey: "memory_relics",
+        mode: "versus",
+        requiresOpponent: true,
+        message: {
+          title: "Memory de Reliquias",
+          description: "Has caído en un minijuego de memoria. Debes superarlo para avanzar.",
+        },
+      };
+    }
+
+    if (normalized.includes("guerra goblin de cartas")) {
+      return {
+        ...base,
+        minigameKey: "goblin_card_war",
+        mode: "versus",
+        requiresOpponent: false,
+        message: {
+          title: "Guerra Goblin de Cartas",
+          description: "Has caído en un duelo de cartas. La suma más alta gana.",
+        },
+      };
+    }
+
+    if (normalized.includes("ruta del pantano")) {
+      return {
+        ...base,
+        minigameKey: "swamp_path",
+        mode: "solo",
+        requiresOpponent: false,
+        message: {
+          title: "Ruta del Pantano",
+          description: "Has caído en Ruta del Pantano. Debes superar esta prueba para liberarte.",
+        },
+      };
+    }
+
+    if (
+      normalized.includes("ritual del tótem") ||
+      normalized.includes("ritual del totem")
+    ) {
+      return {
+        ...base,
+        minigameKey: "totem_ritual",
+        mode: "solo",
+        requiresOpponent: false,
+        message: {
+          title: "Ritual del Tótem",
+          description: "Has caído en Ritual del Tótem. Debes superar esta prueba para liberarte.",
+        },
+      };
+    }
+
+    if (
+      normalized.includes("runas del chamán") ||
+      normalized.includes("runas del chaman")
+    ) {
+      return {
+        ...base,
+        minigameKey: "shaman_runes",
+        mode: "solo",
+        requiresOpponent: false,
+        message: {
+          title: "Runas del Chamán",
+          description: "Has caído en Runas del Chamán. Debes superar esta prueba para liberarte.",
+        },
+      };
+    }
+
+    return null;
+  }
+
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
@@ -94,6 +194,7 @@ export default function GamePage() {
   const [selectionSubmitting, setSelectionSubmitting] = useState(false);
   const [selectingCharacter, setSelectingCharacter] = useState<string | null>(null);
   const [currentTurnPlan, setCurrentTurnPlan] = useState<TurnPlan | null>(null);
+  const [activeLegacyMinigame, setActiveLegacyMinigame] = useState<MinigameStartedEvent | null>(null);
 
   const currentCharacterPickerUserId = useMemo(() => {
     if (!match) return null;
@@ -105,11 +206,7 @@ export default function GamePage() {
         (player) => player.turn_order === match.current_character_turn_order
       )?.user_id ?? null
     );
-  }, [
-    match?.phase,
-    match?.current_character_turn_order,
-    players,
-  ]);
+  }, [match?.phase, match?.current_character_turn_order, players]);
 
   const characterTurnResetKey = [
     match?.id ?? "none",
@@ -133,13 +230,17 @@ export default function GamePage() {
   const myChosenCharacterName = myPlayer?.character_name ?? null;
 
   const activeMatchIdRef = useRef<string | null>(null);
-
   const selectedOrderNumberRef = useRef(selectedOrderNumber);
 
   useEffect(() => {
     selectedOrderNumberRef.current = selectedOrderNumber;
   }, [selectedOrderNumber]);
 
+  useEffect(() => {
+    if (match?.phase !== "active") {
+      setCurrentTurnPlan(null);
+    }
+  }, [match?.phase]);
 
   const loadPlayersSnapshot = useCallback(async (matchId: string) => {
     const { data: playerData, error: playerError } = await supabase
@@ -303,12 +404,6 @@ export default function GamePage() {
   );
 
   useEffect(() => {
-    if (match?.phase !== "active") {
-      setCurrentTurnPlan(null);
-    }
-  }, [match?.phase]);
-
-  useEffect(() => {
     if (!lobbyId) {
       setServerError("ID de partida inválido.");
       setLoading(false);
@@ -440,7 +535,7 @@ export default function GamePage() {
     players.find((player) => player.user_id === match?.winner_user_id) ?? null;
 
   const leadingPlayer =
-  [...players].sort((a, b) => b.board_position - a.board_position)[0] ?? null;
+    [...players].sort((a, b) => b.board_position - a.board_position)[0] ?? null;
 
   const isMyTurn = currentUserId === match?.current_turn_user_id;
   const currentMatchId = match?.id ?? null;
@@ -486,10 +581,17 @@ export default function GamePage() {
 
       await loadGame(false);
 
-      if (turnResult.turn_plan) {
-        setCurrentTurnPlan(turnResult.turn_plan);
+      setCurrentTurnPlan(turnResult.turn_plan ?? null);
+
+      if (!turnResult.turn_plan && landingPreview?.previewText) {
+        const legacyMinigame = buildLegacyMinigameEventFromPreview(
+          turnResult.updated_position,
+          landingPreview.previewText,
+        );
+
+        setActiveLegacyMinigame(legacyMinigame);
       } else {
-        setCurrentTurnPlan(null);
+        setActiveLegacyMinigame(null);
       }
     },
     [currentMatchId, loadGame]
@@ -543,7 +645,6 @@ export default function GamePage() {
 
     setSelectedOrderNumber("");
   }, [currentUserId, loadPlayersSnapshot, match?.id]);
-
 
   const handleFinalizeOrder = useCallback(async (): Promise<FinalizeOrderResult | null> => {
     if (!match?.id) return null;
@@ -606,7 +707,6 @@ export default function GamePage() {
 
     await loadGame(false);
   }, [loadGame, match?.id]);
-
 
   const handleAutoSelectCharacter = useCallback(async (): Promise<"ok" | "retry"> => {
     if (!match?.id) return "retry";
@@ -865,96 +965,137 @@ export default function GamePage() {
                 currentUserId={currentUserId}
                 currentTurnUserId={match?.current_turn_user_id ?? null}
               />
-
-              <TurnController
-                plan={currentTurnPlan}
-                enabled={match?.phase === "active"}
-                onTileLanded={async (event: TileLandedEvent) => {
-                  setTurnMessage(`Cayó en la casilla ${event.tileIndex}.`);
-                }}
-                onStatusApplied={async (event: StatusAppliedEvent) => {
-                  setTurnMessage(event.message.description);
-                }}
-                onChaosCardDrawn={async (event: ChaosCardDrawnEvent) => {
-                  setTurnMessage(`${event.message.title}: ${event.message.description}`);
-                }}
-                onBlockedByPendingMinigame={async (
-                  event: TurnBlockedByPendingMinigameEvent,
-                ) => {
-                  setTurnMessage(event.message.description);
-                }}
-                onTurnEnded={async (event: TurnEndedEvent) => {
-                  if (event.endedBecause !== "match_finished") {
-                    setTurnMessage("El turno terminó.");
-                  }
-                }}
-                onMatchFinished={async (event: MatchFinishedEvent) => {
-                  setTurnMessage(event.message.description);
-                  await loadGame(false);
-                }}
-                onPlaybackComplete={async () => {
-                  setCurrentTurnPlan(null);
-                }}
-                onPlaybackError={async (error) => {
-                  console.error("Error reproduciendo el turn plan:", error);
-                  setCurrentTurnPlan(null);
-                }}
-                renderActiveMinigame={({ activeMinigame, closeMinigame }) => {
-                  if (!activeMinigame.open || !activeMinigame.event) {
-                    return null;
-                  }
-
-                  const event = activeMinigame.event;
-
-                  return (
-                    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 p-4">
-                      <div className="w-full max-w-5xl rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
-                        <div className="border-b border-slate-800 px-6 py-4">
-                          <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-                            Minijuego activo
-                          </p>
-                          <h2 className="mt-1 text-2xl font-bold text-slate-100">
-                            {event.message.title}
-                          </h2>
-                          <p className="mt-2 text-sm text-slate-300">
-                            {event.message.description}
-                          </p>
-                        </div>
-
-                        <div className="px-6 py-5">
-                          <MinigameHost
-                            event={event}
-                            onResolve={async (payload) => {
-                              closeMinigame();
-
-                              if (payload.result === "won") {
-                                setTurnMessage(
-                                  `Ganaste ${event.message.title}. Quedas liberado de la casilla.`,
-                                );
-                              } else {
-                                setTurnMessage(
-                                  `Perdiste ${event.message.title}. Quedarás pendiente en esta casilla.`,
-                                );
-                              }
-
-                              setCurrentTurnPlan(null);
-                            }}
-                            onCancel={() => {
-                              closeMinigame();
-                              setTurnMessage("Se cerró el minijuego activo.");
-                              setCurrentTurnPlan(null);
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }}
-              />
             </div>
           </div>
         </section>
       </div>
+
+      <TurnController
+        plan={currentTurnPlan}
+        enabled={match?.phase === "active"}
+        onTileLanded={async (event: TileLandedEvent) => {
+          setTurnMessage(`Cayó en la casilla ${event.tileIndex}.`);
+        }}
+        onStatusApplied={async (event: StatusAppliedEvent) => {
+          setTurnMessage(event.message.description);
+        }}
+        onChaosCardDrawn={async (event: ChaosCardDrawnEvent) => {
+          setTurnMessage(`${event.message.title}: ${event.message.description}`);
+        }}
+        onBlockedByPendingMinigame={async (
+          event: TurnBlockedByPendingMinigameEvent,
+        ) => {
+          setTurnMessage(event.message.description);
+        }}
+        onTurnEnded={async (event: TurnEndedEvent) => {
+          if (event.endedBecause !== "match_finished") {
+            setTurnMessage("El turno terminó.");
+          }
+        }}
+        onMatchFinished={async (event: MatchFinishedEvent) => {
+          setTurnMessage(event.message.description);
+          await loadGame(false);
+        }}
+        onPlaybackComplete={async () => {
+          setCurrentTurnPlan(null);
+        }}
+        onPlaybackError={async (error) => {
+          console.error("Error reproduciendo el turn plan:", error);
+          setCurrentTurnPlan(null);
+        }}
+        renderActiveMinigame={({ activeMinigame, closeMinigame }) => {
+          if (!activeMinigame.open || !activeMinigame.event) {
+            return null;
+          }
+
+          const event = activeMinigame.event;
+
+          return (
+            <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 p-4">
+              <div className="w-full max-w-5xl rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
+                <div className="border-b border-slate-800 px-6 py-4">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+                    Minijuego activo
+                  </p>
+                  <h2 className="mt-1 text-2xl font-bold text-slate-100">
+                    {event.message.title}
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-300">
+                    {event.message.description}
+                  </p>
+                </div>
+
+                <div className="px-6 py-5">
+                  <MinigameHost
+                    event={event}
+                    onResolve={async (payload) => {
+                      closeMinigame();
+
+                      if (payload.result === "won") {
+                        setTurnMessage(
+                          `Ganaste ${event.message.title}. Quedas liberado de la casilla.`,
+                        );
+                      } else {
+                        setTurnMessage(
+                          `Perdiste ${event.message.title}. Quedarás pendiente en esta casilla.`,
+                        );
+                      }
+
+                      setCurrentTurnPlan(null);
+                    }}
+                    onCancel={() => {
+                      closeMinigame();
+                      setTurnMessage("Se cerró el minijuego activo.");
+                      setCurrentTurnPlan(null);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        }}
+      />
+
+      {activeLegacyMinigame && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-5xl rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl">
+            <div className="border-b border-slate-800 px-6 py-4">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+                Minijuego activo
+              </p>
+              <h2 className="mt-1 text-2xl font-bold text-slate-100">
+                {activeLegacyMinigame.message.title}
+              </h2>
+              <p className="mt-2 text-sm text-slate-300">
+                {activeLegacyMinigame.message.description}
+              </p>
+            </div>
+
+            <div className="px-6 py-5">
+              <MinigameHost
+                event={activeLegacyMinigame}
+                onResolve={async (payload) => {
+                  if (payload.result === "won") {
+                    setTurnMessage(
+                      `Ganaste ${activeLegacyMinigame.message.title}. Quedas liberado de la casilla.`,
+                    );
+                  } else {
+                    setTurnMessage(
+                      `Perdiste ${activeLegacyMinigame.message.title}. Quedarás pendiente en esta casilla.`,
+                    );
+                  }
+
+                  setActiveLegacyMinigame(null);
+                }}
+                onCancel={() => {
+                  setActiveLegacyMinigame(null);
+                  setTurnMessage("Se cerró el minijuego activo.");
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
