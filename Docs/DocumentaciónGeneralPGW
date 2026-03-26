@@ -1,0 +1,524 @@
+# Documentación General de Poorty Goblin Web
+
+## 1. Introducción
+
+**Poorty Goblin Web** es una propuesta de videojuego multijugador en línea, de tablero y por turnos, que toma como punto de partida la lógica de un proyecto previo desarrollado en Java, pero la replantea como una experiencia web moderna, accesible desde navegador y preparada para que varios jugadores participen en una misma partida desde dispositivos distintos.
+
+La idea central del proyecto no es únicamente trasladar un juego existente a internet. Lo que se busca es **rediseñar la experiencia completa** para que funcione correctamente como plataforma web: con cuentas de usuario, lobbies, sincronización en tiempo real, tablero compartido, chat integrado, minijuegos conectados al avance de la partida y una estructura técnica que permita crecer con el tiempo.
+
+Esta documentación está redactada como un documento base de proyecto. Por esa razón, explica el sistema **como si todavía no hubiera sido implementado**, pero lo hace siguiendo la dirección real que el proyecto debe tomar. El objetivo es que una persona que no conozca nada del juego pueda comprender qué es Poorty Goblin Web, cómo debe funcionar, qué pretende ofrecer en su primera versión y cuál es su lógica general.
+
+---
+
+## 2. ¿Qué es Poorty Goblin Web?
+
+Poorty Goblin Web es un juego de tablero multijugador en línea en el que entre **2 y 6 jugadores** compiten dentro de una misma partida. Cada jugador participa desde su propia interfaz, pero todos comparten el mismo estado general del juego: el mismo lobby, el mismo orden de turnos, el mismo tablero, el mismo desarrollo de eventos y la misma condición de victoria.
+
+La experiencia combina varios elementos:
+
+* **competencia por turnos**;
+* **avance por tablero mediante dado**;
+* **casillas con efectos especiales**;
+* **minijuegos integrados al recorrido**;
+* **chat entre jugadores**;
+* **interacción social dentro de la partida**.
+
+La propuesta mantiene el espíritu de un party game de tablero, pero con una identidad propia, reinterpretada bajo una **temática goblin/fantasía**, desligada de referencias externas y pensada como una propiedad visual y conceptual independiente.
+
+El jugador no necesita instalar el proyecto ni ejecutar código local. Toda la interacción debe ocurrir desde una plataforma web centralizada.
+
+---
+
+## 3. Problema que busca resolver
+
+Poorty Goblin Web surge para resolver una limitación muy clara: un juego de tablero multijugador puede ser entretenido en un entorno local o académico, pero resulta poco práctico si depende de configuraciones manuales, archivos locales, ejecución desde entorno de desarrollo o una sola computadora para todos los participantes.
+
+Desde esa perspectiva, el proyecto busca resolver cuatro problemas principales:
+
+### 3.1 Accesibilidad
+
+Una experiencia de juego no debería exigir que el usuario instale herramientas técnicas ni entienda cómo correr un proyecto de programación. La versión web busca que entrar al juego sea tan simple como registrarse, iniciar sesión y unirse a una partida desde el navegador.
+
+### 3.2 Multijugador distribuido
+
+En lugar de depender de un entorno local, la plataforma debe permitir que cada jugador participe desde su propia sesión, con un estado compartido y sincronizado para todos.
+
+### 3.3 Orden y mantenibilidad técnica
+
+El proyecto debe separar correctamente interfaz, lógica del juego, persistencia y tiempo real. Esto permite que el sistema sea más fácil de corregir, ampliar y profesionalizar.
+
+### 3.4 Evolución futura
+
+La primera versión debe servir como base. Sobre ella se podrán añadir más minijuegos, nuevas casillas, más opciones sociales, mejoras visuales, nuevas reglas o modos adicionales sin rehacer todo el sistema.
+
+---
+
+## 4. Objetivo general
+
+Diseñar y desarrollar una plataforma web multijugador por turnos que permita a varios usuarios registrarse, crear o unirse a partidas, interactuar en tiempo real dentro de un tablero compartido, resolver casillas y minijuegos integrados al flujo de la partida, y completar una experiencia de juego estable, clara y atractiva desde navegador.
+
+---
+
+## 5. Objetivos específicos
+
+1. Permitir el acceso de usuarios mediante registro e inicio de sesión.
+2. Ofrecer un sistema de lobbies públicos y privados con control de cupos.
+3. Construir un flujo de partida completo: lobby, preparación, tablero, resolución de eventos y cierre.
+4. Mantener una única versión válida del estado del juego para todos los jugadores.
+5. Integrar minijuegos como parte real del avance de la partida y no como elementos decorativos.
+6. Diseñar una arquitectura modular que facilite el mantenimiento y el crecimiento futuro.
+7. Crear una identidad visual propia y coherente con la temática de Poorty Goblin Web.
+
+---
+
+## 6. Concepto general del juego
+
+Poorty Goblin Web es, en esencia, un **juego de recorrido competitivo**. Los jugadores entran a una sala, esperan a que el grupo esté listo y, una vez iniciada la partida, pasan por dos etapas previas antes de llegar al tablero principal.
+
+Primero se define el **orden de participación**, y luego cada jugador elige un **personaje**. Cuando esa preparación termina, inicia la partida principal: todos aparecen en la casilla inicial, el sistema determina de quién es el turno y el juego avanza ronda tras ronda hasta que alguien gana.
+
+En cada turno, el jugador correspondiente lanza el dado. El sistema resuelve el resultado, mueve la ficha y evalúa la casilla en la que el jugador termina. Esa casilla puede no hacer nada, puede aplicar un beneficio, puede aplicar un castigo, puede mover nuevamente al jugador o puede activar un minijuego.
+
+Esto convierte al tablero en el corazón de la experiencia: no es solo un camino visual, sino una estructura de reglas, sorpresas, riesgos y oportunidades.
+
+---
+
+## 7. Público y tipo de experiencia
+
+Poorty Goblin Web está pensado como un juego social y competitivo, fácil de entender en su base, pero suficientemente dinámico como para resultar entretenido durante toda la partida.
+
+No está concebido como un juego de estrategia profunda ni como una experiencia de alta complejidad técnica para el usuario final. La propuesta apunta más bien a una experiencia de estas características:
+
+* fácil de aprender;
+* rápida de comenzar;
+* divertida en grupo;
+* con mezcla de azar, tensión y competencia;
+* con espacio para interacción social y momentos memorables.
+
+Esto implica que las reglas deben ser claras, la interfaz debe explicar bien qué está ocurriendo y el flujo del turno debe resultar visualmente comprensible incluso para alguien que nunca haya jugado antes.
+
+---
+
+## 8. Flujo general del usuario
+
+## 8.1 Ingreso a la plataforma
+
+El recorrido comienza cuando el usuario accede al sitio web. Si aún no tiene cuenta, podrá registrarse. Si ya posee una, podrá iniciar sesión.
+
+El sistema debe permitir una entrada simple y directa, adecuada para jugadores no técnicos.
+
+## 8.2 Pantalla principal
+
+Una vez autenticado, el jugador accede a la pantalla principal. Desde ahí podrá realizar acciones como:
+
+* crear una partida;
+* unirse a una partida;
+* consultar información general de su perfil o sesión;
+* acceder a secciones auxiliares de la plataforma, según el alcance definido.
+
+## 8.3 Creación o unión a partida
+
+Si el usuario crea una sala, deberá elegir si será **pública** o **privada**.
+
+* Una sala **pública** aparecerá listada para otros jugadores.
+* Una sala **privada** generará un código de acceso que podrá compartirse con invitados.
+
+Si el usuario decide unirse a una partida, podrá hacerlo de dos maneras:
+
+* seleccionando una partida pública disponible;
+* ingresando el código de una sala privada.
+
+## 8.4 Lobby
+
+Cuando el jugador entra a una sala, pasa al lobby. En este espacio podrá ver:
+
+* quiénes están conectados;
+* cuántos jugadores hay;
+* quién es el administrador de la partida;
+* si la sala está lista para iniciar.
+
+El administrador será siempre quien creó la sala y será el único autorizado para iniciar la partida.
+
+## 8.5 Selección de orden
+
+Cuando el administrador decide comenzar, todos los jugadores entran a la primera fase de preparación: la selección del número que servirá para definir el orden de juego.
+
+Cada participante interactúa desde su propia pantalla, pero el sistema centraliza el resultado y determina un orden único para esa partida.
+
+## 8.6 Selección de personaje
+
+Luego de conocer el orden, los jugadores eligen personaje por turnos. Cada personaje solo puede ser seleccionado por un jugador dentro de la misma partida. Conforme alguien elige uno, ese personaje deja de estar disponible para los demás.
+
+## 8.7 Inicio del tablero
+
+Una vez terminada la preparación, inicia el tablero principal. Todos los jugadores aparecen en la casilla inicial con una ficha asociada a su personaje.
+
+A partir de ahí comienza la dinámica por turnos.
+
+## 8.8 Desarrollo de la partida
+
+Durante la partida, el sistema va alternando entre:
+
+* turnos normales de tablero;
+* movimientos de ficha;
+* resolución de casillas;
+* activación de eventos especiales;
+* ejecución de minijuegos;
+* comunicación por chat.
+
+## 8.9 Cierre
+
+La partida termina cuando un jugador cumple la condición de victoria definida por las reglas del tablero. En ese momento, el sistema anuncia al ganador y muestra una resolución final de partida.
+
+---
+
+## 9. Reglas generales de la partida
+
+## 9.1 Cantidad de jugadores
+
+Cada partida debe admitir un mínimo de **2 jugadores** y un máximo de **6 jugadores**.
+
+## 9.2 Administrador de sala
+
+Toda partida tiene un administrador. Esa persona será quien crea la sala y, por lo tanto, quien tiene control sobre el inicio del juego.
+
+## 9.3 Estado cerrado de la partida
+
+Una vez iniciada la partida, no deben permitirse nuevos ingresos a esa sesión.
+
+## 9.4 Orden de turnos
+
+El orden de participación debe definirse en una fase previa y luego mantenerse como referencia para:
+
+* selección de personajes;
+* primer turno;
+* secuencia de rondas posteriores.
+
+## 9.5 Turnos controlados por el sistema
+
+Solo el jugador al que le corresponde el turno puede ejecutar acciones activas de tablero.
+
+## 9.6 Autoridad del sistema
+
+Las decisiones importantes del juego no deben quedar en manos del cliente. El sistema debe resolver de forma centralizada elementos como:
+
+* resultado del dado;
+* cambio de turno;
+* posición final;
+* activación de casillas;
+* aplicación de castigos o beneficios;
+* resultado estructural de la partida.
+
+## 9.7 Llegada exacta a meta
+
+La victoria no debe otorgarse si el jugador sobrepasa la meta. Si el valor del movimiento excede la última casilla, debe aplicarse una regla de retroceso equivalente al excedente.
+
+---
+
+## 10. Sistema del tablero
+
+El tablero es el núcleo principal del juego. En él se expresa la progresión de la partida, la tensión del turno y la variedad de eventos que afectan a cada jugador.
+
+Su función no es solamente mostrar posiciones, sino **organizar el ritmo del juego**.
+
+## 10.1 Elementos principales del tablero
+
+El tablero debe mostrar al menos:
+
+* recorrido de casillas;
+* ubicación de las fichas;
+* turno actual;
+* información del jugador activo;
+* acceso al dado cuando corresponda;
+* estado general de la partida.
+
+## 10.2 Resolución del turno
+
+El turno debe seguir esta lógica general:
+
+1. el jugador en turno lanza el dado;
+2. el sistema determina el resultado;
+3. la ficha se mueve visualmente;
+4. cuando la ficha termina de moverse, el sistema evalúa la casilla alcanzada;
+5. si la casilla genera otro movimiento, la ficha vuelve a moverse;
+6. al llegar a la nueva casilla, también se resuelve su efecto;
+7. cuando ya no quedan efectos pendientes, el turno finaliza o da paso a un minijuego si corresponde.
+
+Un principio importante de diseño es que **los efectos importantes no deben ejecutarse antes de que el movimiento visual termine**. Esto hace que el flujo resulte más claro, más profesional y más fácil de seguir para el usuario.
+
+---
+
+## 11. Tipos de casilla
+
+Poorty Goblin Web contempla una estructura de casillas que permite variedad sin volver confusa la partida.
+
+## 11.1 Casilla de inicio
+
+Es la casilla donde todos los jugadores comienzan. No aplica efectos.
+
+## 11.2 Casilla normal
+
+No altera el turno. El jugador cae en ella y el turno termina sin consecuencias adicionales.
+
+## 11.3 Casilla bonus
+
+Beneficia al jugador. Puede, por ejemplo:
+
+* hacerlo avanzar casillas extra;
+* darle un escudo;
+* mejorar temporalmente su próximo lanzamiento.
+
+## 11.4 Casilla trampa
+
+Perjudica al jugador. Puede, por ejemplo:
+
+* hacerlo retroceder;
+* hacerle perder turnos;
+* limitar la tirada del próximo dado.
+
+## 11.5 Casilla de movimiento especial
+
+Altera el recorrido de forma llamativa. Puede representar portales, atajos o desplazamientos a posiciones concretas del tablero.
+
+## 11.6 Casilla de minijuego
+
+Obliga al jugador a superar una prueba. Si la supera, continúa normalmente. Si la pierde, queda bloqueado en esa casilla hasta vencer el minijuego pendiente.
+
+## 11.7 Casilla de Mazo del Caos
+
+Activa un evento aleatorio mediante carta. Debe sentirse como un evento rápido y sorpresivo, no como un minijuego largo.
+
+## 11.8 Casilla de meta
+
+Marca el final del recorrido y la condición de victoria, siempre que el jugador llegue correctamente según la regla de llegada exacta.
+
+---
+
+## 12. Regla de encadenamiento de casillas
+
+Una de las reglas más importantes del tablero es que los efectos no terminan necesariamente en la primera casilla alcanzada.
+
+Si una casilla mueve al jugador a otra posición, esa nueva posición también debe ser evaluada. Esto permite una resolución consistente del tablero y evita que los efectos se sientan cortados o arbitrarios.
+
+Ejemplo:
+
+1. un jugador cae en una trampa;
+2. la trampa lo hace retroceder;
+3. la ficha se mueve visualmente;
+4. llega a otra casilla;
+5. esa casilla también se resuelve.
+
+Este principio aplica tanto para bonus como para trampas, portales, atajos y eventos del Mazo del Caos.
+
+---
+
+## 13. Sistema de minijuegos
+
+Los minijuegos no deben tratarse como simples animaciones complementarias. En Poorty Goblin Web deben cumplir una función real dentro del avance de la partida.
+
+## 13.1 Función de los minijuegos
+
+Su propósito es introducir variedad, tensión y cambios de ritmo. Un minijuego debe sentirse como una prueba de habilidad, memoria, reflejos o competencia, integrada directamente al tablero.
+
+## 13.2 Cuándo se activan
+
+Se activan cuando un jugador cae en una casilla de minijuego.
+
+## 13.3 Principio visual de activación
+
+El minijuego debe abrirse **después** de que la ficha haya terminado de moverse visualmente y no antes.
+
+## 13.4 Regla del minijuego pendiente
+
+Esta es una de las reglas más importantes del proyecto.
+
+Si un jugador pierde un minijuego:
+
+* no retrocede automáticamente;
+* no repite el movimiento de dado;
+* permanece en la misma casilla;
+* queda bloqueado por ese minijuego;
+* en su siguiente turno no lanza dado, sino que debe repetir ese mismo reto.
+
+Si luego lo gana:
+
+* queda liberado;
+* su turno termina ahí;
+* recién en su siguiente turno normal puede volver a lanzar dado.
+
+Con esta mecánica, perder un minijuego cuesta tiempo real dentro de la partida. Eso hace que las casillas de minijuego funcionen como obstáculos verdaderos y no como simples escenas decorativas.
+
+---
+
+## 14. Minijuegos definidos para la línea base del proyecto
+
+La propuesta base contempla cinco minijuegos principales y un sistema complementario de cartas/eventos:
+
+## 14.1 Memory de Reliquias
+
+Duelo entre dos jugadores por turnos, basado en parejas de cartas. Debe sentirse como un enfrentamiento mental, competitivo y con tensión social.
+
+## 14.2 Guerra Goblin de Cartas
+
+Duelo rápido basado en cartas y comparación de valores. Debe ser breve, claro y fácil de entender, pero visualmente atractivo.
+
+## 14.3 Ruta del Pantano
+
+Minijuego individual de memoria espacial y seguimiento de ruta. El jugador observa un camino y luego debe repetirlo correctamente.
+
+## 14.4 Ritual del Tótem
+
+Minijuego individual de reflejos y timing. El jugador debe acertar en una zona válida dentro de un sistema de barra, aguja o ritmo.
+
+## 14.5 Runas del Chamán
+
+Minijuego individual de secuencia tipo memoria ritual. El jugador observa un patrón y luego debe reproducirlo.
+
+## 14.6 Mazo del Caos
+
+Aunque no es un minijuego largo en sentido estricto, sí forma parte de la capa de eventos especiales del tablero. Su función es introducir aleatoriedad controlada, sorpresas y cambios rápidos de situación.
+
+---
+
+## 15. Chat e interacción social
+
+La experiencia de Poorty Goblin Web no debe ser puramente mecánica. Parte importante del valor del juego está en la interacción entre personas.
+
+Por eso, cada sala debe contar con un chat vinculado a la partida. Ese chat debe permitir, como mínimo, mensajes públicos visibles para todos los miembros de la sala.
+
+De forma complementaria, el sistema puede contemplar mensajería privada o socialización adicional, siempre que esto no complique de forma innecesaria la primera versión.
+
+El chat cumple varias funciones:
+
+* mantiene la sensación de partida compartida;
+* permite comentar jugadas y resultados;
+* refuerza el tono social del juego;
+* conserva parte del espíritu multijugador del proyecto original, pero de manera más integrada.
+
+---
+
+## 16. Criterios de experiencia de usuario
+
+Como Poorty Goblin Web está pensado para personas que no necesariamente conocen el proyecto original, la experiencia debe ser **muy explícita** en todo momento.
+
+El sistema debe dejar claro:
+
+* en qué fase de la partida se encuentra el jugador;
+* a quién le toca jugar;
+* qué acción puede hacer en ese momento;
+* qué efecto acaba de ocurrir;
+* si ganó o perdió un evento;
+* si quedó un castigo o bloqueo pendiente.
+
+Esto implica que el diseño de interfaz no puede depender de intuiciones ocultas. Debe explicar bien el estado del juego mediante textos, señales visuales, transiciones coherentes y retroalimentación sonora cuando corresponda.
+
+---
+
+## 17. Enfoque técnico propuesto
+
+La solución tecnológica debe ser coherente con el tipo de producto que se quiere construir: una aplicación web interactiva, multijugador, con tiempo real y capacidad de crecer.
+
+## 17.1 Frontend
+
+Se propone una aplicación web construida con **Next.js** y **React**, utilizando **TypeScript** para dar claridad estructural al código y **Tailwind CSS** para mantener consistencia visual y reutilización de componentes.
+
+## 17.2 Persistencia y autenticación
+
+Se propone utilizar **Supabase** como base de servicios para:
+
+* autenticación;
+* base de datos PostgreSQL;
+* comunicación en tiempo real;
+* almacenamiento de archivos cuando sea necesario.
+
+## 17.3 Principio de autoridad del sistema
+
+Las decisiones críticas del juego deben resolverse de forma centralizada. El cliente puede solicitar una acción, pero no debe tener autoridad para decidir resultados sensibles como tiradas, movimientos válidos, efectos de casilla, bloqueos por minijuego o ganadores.
+
+## 17.4 Separación por módulos
+
+La arquitectura debe mantenerse modular. Como mínimo, el proyecto debe distinguir entre:
+
+* autenticación;
+* lobbies;
+* flujo de preparación;
+* tablero principal;
+* minijuegos;
+* chat;
+* persistencia;
+* recursos visuales y sonoros.
+
+Esta separación no es solo una preferencia técnica. Es una condición importante para que el proyecto pueda crecer sin volverse inmanejable.
+
+---
+
+## 18. Alcance de la primera versión
+
+La primera versión debe buscar una meta clara: **ser jugable de principio a fin**.
+
+Eso significa que debe cubrir un flujo completo y coherente, aunque todavía no tenga todas las expansiones imaginables.
+
+La versión inicial debe aspirar a incluir al menos:
+
+* registro e inicio de sesión;
+* creación y unión a salas;
+* salas públicas y privadas;
+* lobby con control de administrador;
+* selección de orden;
+* selección de personaje;
+* tablero principal funcional;
+* sistema de casillas;
+* integración de minijuegos base;
+* chat de sala;
+* finalización de partida.
+
+---
+
+## 19. Qué no debe perseguir todavía la primera versión
+
+Para que el proyecto sea viable, la primera versión no debe intentar resolver todo desde el inicio.
+
+No debería priorizar todavía:
+
+* una enorme cantidad de tableros distintos;
+* todos los minijuegos imaginables;
+* personalización profunda de perfiles;
+* ranking competitivo complejo;
+* reconexión avanzada en todos los escenarios;
+* infraestructura pensada para escalamiento masivo;
+* sistemas administrativos complejos;
+* acabados visuales extremos que retrasen la base funcional.
+
+La meta no es lanzar una versión definitiva desde el primer intento, sino construir una base sólida, estable y profesional sobre la cual se pueda crecer.
+
+---
+
+## 20. Línea de evolución futura
+
+Una vez consolidada la base, Poorty Goblin Web podrá crecer en varias direcciones:
+
+* nuevos minijuegos;
+* más variedad de casillas y efectos;
+* tableros adicionales;
+* observación de minijuegos en tiempo real para otros jugadores;
+* estadísticas e historial;
+* mayor profundidad social;
+* mejores animaciones y ambientación;
+* modos alternativos de juego;
+* mejoras de escalabilidad y robustez técnica.
+
+Lo importante es que esas expansiones no obliguen a reconstruir la plataforma desde cero. Por eso la primera versión debe diseñarse con mentalidad de producto real, aunque su alcance inicial sea contenido.
+
+---
+
+## 21. Conclusión
+
+Poorty Goblin Web se plantea como una evolución natural hacia una experiencia multijugador más accesible, ordenada y profesional. Su valor no reside únicamente en replicar una idea previa, sino en convertirla en un sistema web coherente, divertido y técnicamente sostenible.
+
+En su esencia, el proyecto combina tres dimensiones fundamentales:
+
+* una estructura clara de juego por turnos;
+* una capa social que mantiene viva la partida;
+* una arquitectura preparada para crecer.
+
+Si se construye correctamente, Poorty Goblin Web no solo podrá funcionar como una versión web de un juego de tablero, sino como la base de una experiencia propia, reconocible y ampliable en el tiempo.
