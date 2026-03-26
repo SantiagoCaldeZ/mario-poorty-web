@@ -1,0 +1,1059 @@
+Memory de Reliquias — versión definitiva 1v1
+Idea general
+
+Es un minijuego de memoria por turnos entre dos jugadores.
+Cuando un jugador cae en una casilla de este tipo, se abre una pantalla donde puede escoger a uno de los demás jugadores como rival. Luego ambos entran a un tablero con 11 pares de cartas o reliquias ocultas.
+
+El objetivo es encontrar más pares que el oponente antes de que se acaben todas las parejas.
+
+No se trata solo de recordar imágenes, sino también de:
+
+observar qué revela el rival,
+
+aprovechar errores ajenos,
+
+y administrar bien el turno.
+
+Estructura básica
+
+Modo: 1 vs 1
+
+Cantidad total de pares: 11
+
+Cantidad total de cartas: 22
+
+Selección de rival: la hace el jugador que cayó en la casilla
+
+Tipo de juego: por turnos
+
+Ganador: quien consigue más pares al final
+
+Flujo completo del minijuego
+1. Activación
+
+Un jugador cae en una casilla de Memory de Reliquias.
+
+2. Selección del rival
+
+Se abre una interfaz para escoger contrincante entre los demás jugadores válidos de la partida.
+
+Aquí puedes aplicar algunas reglas:
+
+no elegirse a sí mismo;
+
+no elegir a alguien desconectado;
+
+si solo queda un rival posible, se asigna automáticamente.
+
+Este momento es importante porque mete estrategia social: el jugador puede escoger a quien crea más débil, a quien vaya ganando en la partida, o a alguien con quien quiera “ajustar cuentas”.
+
+3. Inicio del tablero
+
+Una vez elegido el rival, ambos entran al minijuego.
+
+Se muestra un tablero con 22 cartas boca abajo, distribuidas en una cuadrícula.
+Por ejemplo:
+
+4 x 6 con dos espacios vacíos visuales,
+
+o 5 x 5 con una casilla decorativa central,
+
+o alguna distribución adaptada para que se vea limpia.
+
+Las 22 cartas representan 11 pares de reliquias iguales.
+
+4. Turnos
+
+El juego se desarrolla por turnos alternados.
+
+En cada turno:
+
+el jugador activo destapa una primera carta;
+
+luego destapa una segunda.
+
+Si coinciden:
+
+el jugador gana ese par;
+
+el par queda bloqueado o retirado del tablero;
+
+y aquí tienes que decidir una regla importante:
+
+Regla recomendada
+
+Si hace par, vuelve a jugar.
+
+Esa es la regla más clásica y más emocionante en memory competitivo, porque premia de verdad la memoria y permite remontadas o rachas.
+
+Si no coinciden:
+
+las dos cartas se muestran unos segundos;
+
+luego se vuelven a tapar;
+
+y el turno pasa al oponente.
+
+5. Fin del juego
+
+El minijuego termina cuando ya no quedan pares disponibles.
+
+En ese momento se comparan:
+
+pares ganados por el jugador que activó el minijuego;
+
+pares ganados por el rival.
+
+Gana quien tenga más.
+
+Condición de victoria
+
+El ganador es el jugador que consigue más de los 11 pares.
+
+Eso significa:
+
+si un jugador consigue 6 o más, ya matemáticamente puede quedar arriba;
+
+pero normalmente el juego se deja terminar completo para mantener la lógica clara y justa.
+
+Empate
+
+Como son 11 pares, en principio no debería haber empate en pares completos si todos se reparten correctamente, porque 11 es impar.
+El reparto final será necesariamente:
+
+6–5
+
+7–4
+
+8–3
+
+etc.
+
+Eso está buenísimo, porque te evita tener que diseñar desempates raros.
+
+Qué lo hace interesante
+
+Este minijuego tiene varias capas de estrategia:
+
+1. Memoria directa
+
+Recordar dónde están las reliquias.
+
+2. Memoria indirecta
+
+Recordar lo que mostró el otro jugador en turnos anteriores.
+
+3. Aprovechamiento del error rival
+
+Muchas veces el rival te revela información sin querer.
+
+4. Selección del rival
+
+Como quien cae en la casilla elige oponente, el minijuego empieza con una decisión táctica incluso antes de la primera carta.
+
+Eso lo hace mucho más rico que un memory solo.
+
+Diseño visual recomendado
+
+Para diferenciarlo de Guerra Goblin de Cartas, aquí no usaría naipes normales.
+Aquí sí conviene usar imágenes temáticas del mundo goblin, por ejemplo:
+
+reliquias,
+
+tótems,
+
+hongos mágicos,
+
+ojos rúnicos,
+
+frascos,
+
+gemas,
+
+máscaras,
+
+dagas ceremoniales,
+
+llaves antiguas,
+
+calaveras encantadas,
+
+amuletos.
+
+Así se siente como un minijuego propio y no como otro juego de cartas.
+
+Presentación visual
+
+La interfaz debería mostrar:
+
+tablero central con las 22 cartas;
+
+panel superior o lateral con:
+
+nombre del jugador 1,
+
+nombre del jugador 2,
+
+pares ganados por cada uno;
+
+indicador de turno actual;
+
+breve animación al hacer match;
+
+cartas bloqueadas o retiradas cuando ya pertenecen a alguien.
+
+Reglas concretas que te recomiendo
+
+Estas son las que yo dejaría como versión oficial:
+
+Regla 1
+
+El jugador que cae en la casilla elige al rival.
+
+Regla 2
+
+El tablero tiene 11 pares / 22 cartas.
+
+Regla 3
+
+Cada turno consiste en revelar 2 cartas.
+
+Regla 4
+
+Si las cartas coinciden:
+
+el jugador gana ese par,
+
+el par queda fuera o marcado como suyo,
+
+y vuelve a jugar.
+
+Regla 5
+
+Si no coinciden:
+
+se muestran un instante,
+
+se vuelven a ocultar,
+
+y pasa el turno al otro.
+
+Regla 6
+
+Cuando no quedan pares, gana quien tenga más.
+
+Qué pasa en la partida principal
+
+Aquí hay varias formas de conectarlo con el tablero, pero te recomiendo una simple.
+
+Si el jugador que cayó en la casilla gana:
+
+supera la casilla sin castigo.
+
+Si pierde:
+
+recibe la penalización asociada a esa casilla o “pierde el reto”.
+
+Dependiendo de cómo quieras manejar las casillas de minijuego, eso puede significar:
+
+no pasa nada extra si gana;
+
+pero si pierde, recibe un castigo;
+
+o simplemente queda registrado como derrota del evento.
+
+Eso ya depende del sistema general del tablero, pero el minijuego en sí queda claro.
+
+Por qué 11 pares está bien
+
+Me parece una muy buena cantidad.
+
+Porque:
+
+da suficiente profundidad;
+
+no termina demasiado rápido;
+
+permite remontadas;
+
+y con 22 cartas ya se siente como duelo serio.
+
+No lo haría mucho más grande, porque podría volverse pesado.
+Pero 11 pares está en un punto bastante bueno: ya exige memoria real, sin volverse eterno.
+
+Qué aporta este juego a Poorty Goblin Web
+
+Este minijuego mete cosas muy valiosas:
+
+duelo directo entre jugadores,
+
+elección de rival,
+
+tensión social,
+
+memoria competitiva,
+
+y un ritmo más pausado/mental que contrasta bien con otros minijuegos más rápidos.
+
+Además, como viene heredado en espíritu desde Mario Poorty, te ayuda a conservar una parte importante de esa experiencia, pero ahora reinterpretada con temática propia.
+
+Resumen final
+
+Memory de Reliquias es un minijuego 1 vs 1 por turnos.
+Cuando un jugador cae en su casilla:
+
+elige a otro jugador como rival,
+
+ambos entran a un tablero con 22 cartas / 11 pares,
+
+destapan dos cartas por turno,
+
+si hacen pareja, se quedan el par y vuelven a jugar,
+
+si fallan, el turno pasa al otro,
+
+y al final gana quien consiga más pares.
+
+Así queda como un duelo muy claro, muy competitivo y muy fiel a la lógica que ya te funcionaba en Mario Poorty.
+
+2. Guerra Goblin de Cartas
+Idea general
+
+Es un duelo rápido entre jugadores usando cartas de naipe. Ya que tienes las 52 imágenes, este juego es perfecto para reutilizar ese material y convertirlo en un sistema claro, rápido y muy entendible.
+
+La idea no es hacer un póker complejo, sino un minijuego breve con tensión inmediata.
+
+Versión que más te recomiendo
+
+La mejor para empezar es:
+
+cada jugador roba 3 cartas y gana la suma más alta.
+
+Así de simple.
+
+Valores sugeridos
+
+A = 11
+
+J = 10
+
+Q = 10
+
+K = 10
+
+2–10 = valor numérico
+
+Eso es fácil de entender y fácil de programar.
+
+Flujo del juego
+
+El jugador cae en casilla de duelo.
+
+El sistema selecciona un oponente válido.
+
+Se abre la mesa de Guerra Goblin de Cartas.
+
+Cada jugador recibe 3 cartas.
+
+Se muestran una a una con pequeña animación.
+
+Se calcula la suma.
+
+Gana quien tenga el total mayor.
+
+Posibles desempates
+
+Si empatan:
+
+ambos roban una carta extra;
+
+o gana quien tenga la carta individual más alta;
+
+o se repite toda la ronda.
+
+Yo haría una carta extra como desempate. Es más emocionante.
+
+Variantes futuras
+
+Más adelante puedes agregar modos como:
+
+carta más alta gana;
+
+mejor combinación de palo;
+
+apostar una carta visible y una oculta;
+
+“roba o planta”.
+
+Pero para v1, la suma de 3 cartas está excelente.
+
+Condición de victoria
+
+Tener el valor total más alto.
+
+Condición de derrota
+
+Perder el duelo frente al oponente.
+
+Estética recomendada
+
+Aunque uses naipes normales, la presentación debe sentirse goblin:
+
+mesa de madera o piedra,
+
+brillo verdoso,
+
+marco oscuro,
+
+texto de “Duelo de Cartas” con tono ritual/apuesta.
+
+Qué aporta al tablero
+
+Este juego mete:
+
+interacción directa,
+
+competencia,
+
+azar con ligera emoción de revelado,
+
+y variedad sin necesidad de gran complejidad.
+
+Es de los mejores candidatos para ser uno de tus minijuegos base.
+
+3. Ruta del Pantano
+Idea general
+
+Este es el sucesor espiritual de Memory Path.
+El jugador ve una ruta correcta sobre piedras, raíces o plataformas del pantano y luego debe repetirla.
+
+Es un juego de memoria espacial y atención.
+
+Cómo se ve
+
+La pantalla muestra varias plataformas o nodos conectados dentro de un pequeño mapa pantanoso.
+Durante unos segundos se ilumina una ruta correcta.
+
+Luego desaparece el resaltado y el jugador debe recorrerla en el orden correcto.
+
+Flujo del juego
+
+El jugador cae en la casilla correspondiente.
+
+Se muestra el mapa corto del pantano.
+
+La ruta correcta se ilumina paso a paso.
+
+Después se oculta.
+
+El jugador debe hacer clic en las piedras/plataformas correctas en el mismo orden.
+
+Si completa toda la secuencia, gana.
+
+Condición de victoria
+
+Repetir la ruta exacta.
+
+Condición de derrota
+
+tocar una plataforma incorrecta;
+
+o agotar el tiempo;
+
+o equivocarse demasiadas veces.
+
+Dificultad escalable
+
+Puedes aumentar:
+
+cantidad de pasos,
+
+velocidad con la que se muestra,
+
+número de nodos falsos,
+
+complejidad visual del mapa.
+
+Qué lo diferencia de Runas del Chamán
+
+Aunque ambos son de memoria secuencial, este se siente más de:
+
+recorrido,
+
+dirección,
+
+camino,
+
+navegación.
+
+Mientras que Runas del Chamán se siente más de repetir una secuencia abstracta.
+
+Estética recomendada
+
+piedras con musgo,
+
+raíces iluminadas,
+
+pantano con brillo,
+
+nodos conectados visualmente,
+
+una ruta que parece segura entre zonas peligrosas.
+
+Qué aporta al tablero
+
+Es muy temático para Poorty Goblin Web.
+De todos, probablemente es uno de los que más “encaja con el mundo” del juego.
+
+4. Ritual del Tótem
+Idea general
+
+Es un minijuego de reflejos y timing.
+
+El jugador debe activar un tótem justo en el momento correcto, deteniendo un marcador móvil dentro de una zona precisa.
+
+Es simple, rápido y muy útil para meter variedad, porque no depende de memoria sino de reacción.
+
+Mecánica base
+
+Hay una barra horizontal o circular con una zona de acierto.
+
+Un marcador se mueve constantemente.
+
+El jugador debe pulsar en el momento exacto para detenerlo en la zona buena.
+
+Niveles de éxito
+
+Esto puede quedar muy bien si no lo tratas como solo éxito o fracaso, sino como tres niveles:
+
+perfecto
+
+aceptable
+
+fallo
+
+Pero para tablero, normalmente bastaría:
+
+ganar
+
+perder
+
+Flujo del juego
+
+El jugador cae en una casilla de minijuego.
+
+Aparece un tótem central cargándose.
+
+Una aguja/barra empieza a moverse.
+
+El jugador debe detenerla en la zona verde o dorada.
+
+Si cae en la zona correcta, gana.
+
+Variantes
+
+Puedes hacer:
+
+una sola barra;
+
+tres intentos consecutivos;
+
+o dos rondas con dificultad creciente.
+
+Para v1, una o dos rondas es suficiente.
+
+Condición de victoria
+
+Detener el marcador dentro de la zona válida la cantidad requerida de veces.
+
+Condición de derrota
+
+Fallar demasiado o agotar los intentos.
+
+Dificultad escalable
+
+Puedes variar:
+
+tamaño de la zona buena,
+
+velocidad de la barra,
+
+número de rondas,
+
+presencia de zonas trampa.
+
+Estética recomendada
+
+Hazlo ver como:
+
+cargar un tótem,
+
+golpear una runa en el instante exacto,
+
+o activar energía mágica.
+
+Eso le da mucha más personalidad que una barra genérica.
+
+Qué aporta al tablero
+
+Aporta reflejos, rapidez y tensión inmediata.
+Es excelente porque corta muy bien con los minijuegos de memoria.
+
+5. Runas del Chamán
+Idea general
+
+Es un juego de secuencia al estilo Simon Says, pero tematizado como runas mágicas que se encienden en cierto orden y el jugador debe repetir exactamente la secuencia.
+
+Diferencia con Ruta del Pantano
+
+Aquí no importa tanto “un camino” sino “una secuencia”.
+Es más abstracto, más ceremonial, más mágico.
+
+Cómo se ve
+
+Tienes varias runas distribuidas en círculo, cuadrado o patrón ritual.
+Las runas se iluminan en cierto orden.
+
+Luego el jugador debe pulsarlas en ese mismo orden.
+
+Flujo del juego
+
+El jugador entra al minijuego.
+
+Aparece un altar o círculo rúnico.
+
+Se iluminan varias runas una tras otra.
+
+El jugador memoriza el orden.
+
+Debe repetirlo correctamente.
+
+Si lo logra, gana.
+
+Condición de victoria
+
+Reproducir toda la secuencia exacta.
+
+Condición de derrota
+
+tocar una runa incorrecta;
+
+agotarse el tiempo;
+
+o fallar más veces de las permitidas.
+
+Dificultad escalable
+
+Puedes ajustar:
+
+longitud de la secuencia,
+
+velocidad,
+
+cantidad de runas disponibles,
+
+tiempo de pausa entre luces.
+
+Variantes
+
+Más adelante puedes hacer niveles:
+
+secuencia de 4;
+
+luego de 5;
+
+luego de 6.
+
+O incluso una sola secuencia difícil.
+
+Estética recomendada
+
+runas flotantes,
+
+energía verdosa o violeta,
+
+altar de chamán,
+
+sonido corto al iluminar cada runa.
+
+Qué aporta al tablero
+
+Es un minijuego muy claro, rápido y elegante.
+Además, visualmente puede quedar muy bien en la temática goblin/mística
+
+
+6. Mazo del Caos
+Importante
+
+Este no lo trataría como “minijuego” en el mismo sentido que los otros.
+Lo trataría como una casilla especial con sistema propio.
+
+Es decir: no entras a competir ni a resolver una prueba larga.
+Caes ahí, robas una carta y ocurre un efecto.
+
+Idea general
+
+El jugador roba una carta del mazo goblin y esa carta desencadena un evento inmediato.
+
+Aquí es donde tus 52 naipes pueden brillar muchísimo, porque les das un segundo uso aparte de Guerra Goblin de Cartas.
+
+Flujo del sistema
+
+El jugador cae en la casilla de cartas.
+
+Se abre una interfaz breve de “Mazo del Caos”.
+
+Una carta se roba al azar.
+
+La carta se revela con animación.
+
+Según el palo y el valor, se aplica un efecto.
+
+Cómo mapear los palos
+
+Una propuesta muy buena sería:
+
+Corazones: ayuda / curación / protección
+
+Diamantes: riqueza / avance / recompensa
+
+Tréboles: interacción / truco / alteración de otros
+
+Picas: castigo / retroceso / peligro
+
+Cómo mapear los valores
+
+2–5: efecto leve
+
+6–10: efecto medio
+
+J/Q/K: efecto fuerte
+
+A: efecto único o raro
+
+Ejemplos de efectos
+Positivos
+
+avanza 2
+
+avanza 3
+
+tira otra vez
+
+escudo contra la próxima trampa
+
+inmunidad a un duelo
+
+roba otra carta
+
+Negativos
+
+retrocede 2
+
+retrocede 3
+
+pierdes el siguiente turno
+
+tu próximo dado queda reducido
+
+intercambio con el último
+
+repite una casilla peligrosa
+
+De caos/interacción
+
+reta a otro jugador
+
+intercambia posición con alguien
+
+todos los jugadores avanzan 1 menos tú
+
+todos retroceden 1
+
+roba una carta adicional pero debes aceptar el resultado
+
+Por qué es tan bueno
+
+Porque mete sorpresa real y muchísima rejugabilidad con una base simple.
+
+Y además te da identidad:
+no es solo una “casilla azar”, sino el Mazo del Caos, algo reconocible dentro del juego.
+
+Qué aporta al tablero
+
+Aporta:
+
+sorpresa,
+
+cambio de ritmo,
+
+reutilización de assets,
+
+y una capa de imprevisibilidad muy divertida
+
+
+
+Estas no deberían sentirse “vacías” o “sin gracia”, pero no deben disparar ningún efecto mecánico.
+Sirven para que el tablero respire y para que no cada turno sea una interrupción.
+
+Yo las manejaría como:
+
+Normal simple
+
+No pasa nada. El jugador solo avanza y termina su turno.
+
+Normal ambientada
+
+No cambia nada mecánicamente, pero puede mostrar un pequeño mensaje temático:
+
+“El pantano está en calma.”
+
+“Pisaste una roca seca.”
+
+“Los goblins te observan en silencio.”
+
+Eso ayuda a que no se sienta muerto, aunque no haya efecto.
+
+Para qué sirven realmente
+
+bajar la saturación del tablero,
+
+hacer que los bonus y trampas se sientan especiales,
+
+evitar que la partida sea demasiado castigadora o demasiado cargada.
+
+
+2. Casillas bonus
+
+Aquí yo no pondría 10 tipos distintos.
+Haría 3 bonus oficiales, claros y fáciles de entender.
+
+Bonus 1: Botín Goblin
+
+Efecto: avanza 2 casillas inmediatamente.
+
+Esto es buenísimo porque:
+
+se entiende al instante,
+
+da satisfacción inmediata,
+
+y visualmente queda bien como recompensa.
+
+Tema:
+
+encontraste un botín,
+
+un cofre pequeño,
+
+o un tesoro goblin que te impulsa.
+
+Bonus 2: Bendición del Chamán
+
+Efecto: obtienes un escudo contra la próxima trampa o efecto negativo.
+
+Ese escudo puede consumirse cuando:
+
+caigas en una trampa,
+
+robes una mala carta del Mazo del Caos,
+
+o recibas cierto castigo del tablero.
+
+Esto me gusta mucho porque mete estrategia y persistencia, no solo avance bruto.
+
+Tema:
+
+una runa protectora,
+
+un amuleto,
+
+o una bendición temporal.
+
+Bonus 3: Dado Favorable
+
+Efecto: en tu próximo turno obtienes una ventaja sobre el dado.
+
+Aquí tienes dos versiones posibles. Yo usaría una sola para no enredar:
+
+opción recomendada
+
++1 al próximo lanzamiento
+Si sacas 4, avanzas 5.
+
+Es simple y no rompe demasiado el balance.
+
+alternativa
+
+repetir tirada si no te gusta el resultado
+Eso también es divertido, pero complica más la UI y la lógica del turno.
+
+Yo me quedo con +1 al próximo dado.
+
+
+Casillas trampa
+
+Aquí también haría 3 trampas oficiales, claras y temáticas.
+
+Trampa 1: Lodo Pegajoso
+
+Efecto: retrocedes 2 casillas inmediatamente.
+
+Es la trampa básica ideal:
+
+simple,
+
+clara,
+
+visual,
+
+y no excesivamente cruel.
+
+Tema:
+
+te hundiste en el pantano,
+
+el lodo te arrastró,
+
+quedaste atascado.
+
+Trampa 2: Maldición del Tótem
+
+Efecto: pierdes tu próximo turno.
+
+Esta es más fuerte, así que está bien que no aparezca demasiado.
+
+Tema:
+
+un tótem maldito,
+
+una maldición chamánica,
+
+energía oscura que te inmoviliza.
+
+Hay que comunicarla muy bien en interfaz para que el jugador no se confunda cuando le toque.
+
+Trampa 3: Dado Debilitado
+
+Efecto: en tu próximo turno tu dado queda reducido.
+
+La versión que más me gusta es:
+
+en tu próximo turno, el resultado máximo del dado es 3.
+
+O sea, en vez de tirar 1–6, tiras 1–3.
+
+Eso es muy buena trampa porque:
+
+no te castiga de inmediato como retroceso,
+
+pero te debilita,
+
+y se siente distinta a las otras.
+
+Tema:
+
+niebla maldita,
+
+veneno del pantano,
+
+cansancio goblin.
+
+
+Casillas de movimiento especial
+
+Estas no son exactamente bonus ni exactamente trampa.
+Son casillas que alteran tu posición de una manera más “de tablero”, más llamativa.
+
+Yo pondría 2 movimientos especiales oficiales.
+
+Movimiento especial 1: Portal de Hongos
+
+Efecto: te teletransporta a otra casilla del tablero.
+
+Pero ojo: no lo haría totalmente aleatorio.
+Lo haría controlado.
+
+Por ejemplo:
+
+cada casilla de Portal de Hongos tiene asociada una salida específica,
+
+o te lleva a una de 2 posibles salidas predeterminadas.
+
+Eso es mucho mejor que mandarte a cualquier parte sin control.
+
+Cómo usarlo
+
+puede ser un portal favorable,
+
+desfavorable,
+
+o neutro según cómo lo diseñes.
+
+Mi recomendación:
+
+que uno de los portales favorezca un poco,
+
+y el otro sea más incierto.
+
+Tema:
+
+hongos mágicos,
+
+círculos rúnicos,
+
+portales goblin.
+
+Movimiento especial 2: Atajo de Raíces
+
+Efecto: te mueve automáticamente hacia una casilla concreta más adelante.
+
+Esto no es un bonus “avanza 2”; esto se siente más especial porque parece parte del recorrido.
+
+Ejemplo:
+
+“las raíces te llevan desde la 11 hasta la 15”
+
+o “subes por una raíz elevada y saltas un tramo del pantano”.
+
+Esto queda muy bien visualmente, porque parece un atajo del tablero.
+
+También podrías tener la versión negativa:
+
+raíz traicionera que te deja más atrás.
+
+Pero para no volverla otra trampa, yo haría que Atajo de Raíces sea principalmente favorable.
+
+
+
+Inicio: 1
+
+Memory de Reliquias: 2
+
+Guerra Goblin de Cartas: 2
+
+Ruta del Pantano: 3
+
+Ritual del Tótem: 3
+
+Runas del Chamán: 3
+
+Mazo del Caos: 2
+
+Normales: 6
+
+Bonus: 3
+
+Trampa: 3
+
+Movimiento especial: 2
+
+Meta: 1
+
+
+Al lanzar el dado, cuando cae el número, aparentemente se ejecuta la casilla en la que cayó el usuario y el movimiento de la ficha al mismo tiempo, por lo que el usuario no llega a ver la ficha moviéndose. La idea es que, se lance el dado, caiga un número, la ficha se mueva a la casilla correspondiente y una vez esté la ficha físicamente (en la interfaz) en la casilla, ya ahí puede ejecutarse.
+Al caer en una casilla especial, es decir, bonus, trampa o movimiento especial, si esta casilla especial te dirige hacia otra casilla, debes cumplir con lo que esa otra casilla indica, es decir, si por ejemplo una trampa te lleva 2 casillas hacia atrás, debes cumplir lo que haya en esa casilla, ya sea minijuego (aplica todo lo correspondiente a castigos), bonus, trampa o movimiento especial, si vuelves a caer en otro bonus o trampa que te mueva, deberás volver a hacer lo que diga donde caíste.
+
+Ejemplo:
+
+Arrancas en inicio, lanzas el dado, toca 3, la ficha se mueve a la casilla 3 y es una trampa de retroceder 2 casillas, aparece la ventana que informa que caíste en la trampa y que te retrocederá 2 casillas, cuando cierres o se cierre automáticament la ventana, se actualiza la posición del usuario, la ficha hace el movimiento respectivo, y una vez se encuentre la ficha en esa nueva casilla, toca cumplir, si es minujuego, se hace el minijuego y aplica las reglas de castigos, si es aglún bonus, trampa o movimiento, aplicamos estas mismas reglas mencionadas.

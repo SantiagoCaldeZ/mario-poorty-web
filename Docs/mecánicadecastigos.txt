@@ -1,0 +1,318 @@
+Idea central
+
+Cuando un jugador cae en una casilla de minijuego, esa casilla no queda “resuelta” simplemente por haber llegado a ella.
+La casilla solo se considera superada si el jugador gana el minijuego asociado.
+
+Si lo pierde, el castigo no es retroceder ni perder una cantidad fija de pasos.
+El castigo es quedar bloqueado en esa casilla hasta lograr superar el minijuego.
+
+Eso significa que, mientras ese minijuego siga pendiente, el jugador no puede lanzar el dado en sus siguientes turnos.
+
+Cómo funciona realmente turno por turno
+
+Supongamos que un jugador cae en una casilla de minijuego.
+
+En ese momento ocurren dos cosas:
+
+el jugador termina su movimiento normalmente al llegar a esa casilla;
+
+se activa el minijuego correspondiente.
+
+A partir de ahí hay dos posibles resultados.
+
+Si gana el minijuego
+
+La casilla queda superada.
+El jugador queda libre y, cuando le vuelva a tocar turno más adelante, podrá lanzar el dado normalmente.
+
+Si pierde el minijuego
+
+La casilla no queda superada.
+El jugador permanece en esa misma posición del tablero y entra en estado de minijuego pendiente o bloqueo por minijuego.
+
+Eso quiere decir que, cuando el turno regrese a ese jugador, no lanza el dado.
+En lugar de eso, debe volver a jugar ese mismo minijuego para intentar liberarse.
+
+La consecuencia real del castigo
+
+Aquí está el punto importante de tu mecánica:
+
+perder un minijuego implica perder, como mínimo, una ronda completa de avance.
+
+¿Por qué?
+
+Porque aunque el jugador gane en su siguiente oportunidad, en ese turno de recuperación no tira el dado.
+Ese turno se consume simplemente en intentar superar el minijuego pendiente.
+
+Entonces la secuencia queda así:
+
+cae en minijuego;
+
+lo pierde;
+
+en su próximo turno no tira dado, solo repite el minijuego;
+
+si esta vez lo gana, queda liberado;
+
+pero recién en el siguiente turno después de ese vuelve a poder lanzar el dado.
+
+O sea: la derrota siempre le quita al menos un turno completo de progreso en el tablero.
+
+Y si vuelve a perder, el castigo se prolonga:
+
+en el siguiente turno otra vez no tira;
+
+otra vez repite el minijuego;
+
+y así sucesivamente hasta que lo gane.
+
+Qué significa “volver a jugar el minijuego”
+
+No significa caer en una casilla nueva ni activar un efecto distinto.
+Significa que el jugador sigue “atrapado” en la misma casilla de minijuego que todavía no ha superado.
+
+En términos jugables, esa casilla queda como un reto abierto.
+
+Mientras no lo gane:
+
+no avanza;
+
+no tira dado;
+
+no activa otra casilla;
+
+no sale de ahí.
+
+La partida sigue normalmente para los demás jugadores, pero ese jugador queda detenido hasta resolver su reto.
+
+Qué casillas usan esta mecánica
+
+Esta mecánica aplica solo a casillas de minijuego.
+
+O sea, sí aplicaría a cosas como:
+
+Memory de Reliquias
+
+Guerra Goblin de Cartas
+
+Ruta del Pantano
+
+Ritual del Tótem
+
+Runas del Chamán
+
+Mazo del Caos
+
+Pero no aplicaría a casillas especiales como:
+
+bonus
+
+trampa
+
+movimiento especial
+
+Eso es importante porque separa dos mundos:
+
+Casillas especiales
+
+Se resuelven de inmediato.
+Te benefician o te perjudican, pero después el juego sigue normal.
+
+Casillas de minijuego
+
+Exigen ser “aprobadas”.
+Si no las superas, te quedas atascado ahí.
+
+Qué pasa con la posición del jugador
+
+La posición del jugador no cambia cuando pierde el minijuego.
+
+Se queda exactamente en la casilla donde cayó.
+
+Eso es importante porque:
+
+no hay retroceso automático;
+
+no vuelve a la casilla anterior;
+
+no repite el movimiento;
+
+simplemente queda detenido en esa casilla.
+
+La casilla sigue siendo su ubicación actual en el tablero hasta que consiga superar el reto.
+
+Qué pasa cuando por fin gana
+
+Cuando finalmente gana el minijuego pendiente, lo que ocurre no es que avance de inmediato ni que tire dado en ese mismo instante.
+
+Lo que ocurre es esto:
+
+la casilla queda marcada como superada;
+
+el jugador sale del estado de bloqueo;
+
+su turno termina ahí;
+
+y recién en su próximo turno normal podrá volver a lanzar el dado.
+
+Eso hace que la penalización sea clara, consistente y fácil de entender:
+ganar el reintento no te devuelve el turno perdido; solo te libera para el futuro.
+
+Y eso está muy bien, porque evita que la derrota se sienta gratis.
+
+Ejemplo concreto 1
+
+Jugador A cae en la casilla 12, que es un minijuego.
+
+juega Ritual del Tótem;
+
+pierde.
+
+Entonces:
+
+queda en la casilla 12;
+
+el minijuego queda pendiente;
+
+no puede tirar en su próximo turno.
+
+Más adelante, cuando vuelve a tocarle:
+
+no tira dado;
+
+vuelve a jugar Ritual del Tótem.
+
+Si ahora gana:
+
+queda liberado;
+
+sigue en la casilla 12;
+
+termina su turno.
+
+En su siguiente turno, recién ahí:
+
+puede lanzar dado;
+
+y avanzar desde la casilla 12.
+
+Ejemplo concreto 2
+
+Jugador B cae en Memory de Reliquias.
+
+elige rival;
+
+juega;
+
+pierde.
+
+Cuando vuelva su turno:
+
+no lanza el dado;
+
+vuelve a jugar Memory de Reliquias.
+
+Si vuelve a perder:
+
+sigue bloqueado.
+
+Cuando más adelante logre ganar:
+
+queda desbloqueado;
+
+pero no avanza ese mismo turno.
+
+Recién en la ronda siguiente vuelve al ciclo normal de lanzar dados.
+
+Qué aporta esta mecánica al juego
+
+Esta mecánica hace que los minijuegos tengan peso real dentro de la partida.
+
+Sin esto, un minijuego perdido puede sentirse como algo anecdótico o decorativo.
+Con esta regla, los minijuegos se convierten en pruebas de paso.
+
+Eso logra varias cosas:
+
+1. Da importancia verdadera a los minijuegos
+
+No son solo un evento bonito; tienen consecuencia directa sobre el avance.
+
+2. Aumenta la tensión
+
+Cuando caes en una casilla de minijuego, de verdad importa ganarlo.
+
+3. Hace que el tablero tenga “obstáculos reales”
+
+No todo castigo es retroceder.
+Aquí el castigo es quedar retenido.
+
+4. Se siente muy de juego de mesa
+
+Porque crea la sensación de “quedaste atrapado aquí hasta superar la prueba”.
+
+Lo que esta mecánica no hace
+
+Para que quede bien claro, esta regla no significa:
+
+que pierdes automáticamente varios turnos fijos;
+
+que retrocedes al perder;
+
+que al ganar el reintento recuperas el turno perdido;
+
+que las casillas especiales también te bloquean;
+
+que el jugador vuelve a tirar hasta que gane en el mismo turno.
+
+No. La lógica correcta es:
+
+cada turno bloqueado da una sola oportunidad de superar el minijuego;
+
+si gana, se libera para el futuro;
+
+si pierde, sigue bloqueado;
+
+y no hay dado mientras esté pendiente.
+
+Cómo se puede definir de forma casi “oficial”
+
+Si quisieras describirlo como regla formal del juego, yo lo escribiría así:
+
+Cuando un jugador cae en una casilla de minijuego, debe ganar el minijuego para considerar esa casilla superada. Si lo pierde, queda bloqueado en esa casilla. Mientras el minijuego siga pendiente, en sus próximos turnos no podrá lanzar el dado y deberá volver a intentar ese mismo minijuego. Cuando finalmente lo gane, el bloqueo se elimina, pero ese turno no incluye lanzamiento de dado; el jugador podrá volver a lanzar normalmente hasta su siguiente turno. Esta mecánica aplica únicamente a casillas de minijuego y no a casillas especiales.
+
+Cómo lo pensaría a nivel de sistema
+
+Internamente, esta mecánica implica que cada jugador puede tener algo así como:
+
+un estado de minijuego pendiente
+
+una referencia a qué minijuego debe repetir
+
+y quizá la casilla origen donde quedó bloqueado
+
+En lenguaje simple:
+el sistema necesita saber si el jugador está “libre para tirar” o si está “obligado a resolver un minijuego antes de volver a tirar”.
+
+Eso vuelve la lógica mucho más clara y consistente.
+
+Resumen directo
+
+La mecánica, bien entendida, sería así:
+
+caes en un minijuego;
+
+si ganas, sigues normal en el próximo turno;
+
+si pierdes, quedas bloqueado en esa casilla;
+
+en tu siguiente turno no tiras dado, repites el minijuego;
+
+si lo ganas, te liberas, pero ese turno ya se gastó;
+
+recién en el turno siguiente vuelves a tirar;
+
+si vuelves a perder, sigues atrapado;
+
+esto aplica solo a minijuegos, no a casillas especiales.
+
+Esa es una mecánica muy buena porque hace que los minijuegos tengan consecuencia real, persistencia y tensión, justo como en tu Mario Poorty de Java, pero ya aterrizado de forma clara para Poorty Goblin Web.
