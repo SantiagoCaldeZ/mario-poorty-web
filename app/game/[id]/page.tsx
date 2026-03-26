@@ -195,6 +195,7 @@ export default function GamePage() {
   const [selectingCharacter, setSelectingCharacter] = useState<string | null>(null);
   const [currentTurnPlan, setCurrentTurnPlan] = useState<TurnPlan | null>(null);
   const [activeLegacyMinigame, setActiveLegacyMinigame] = useState<MinigameStartedEvent | null>(null);
+  const [pendingLegacyMinigame, setPendingLegacyMinigame] = useState<MinigameStartedEvent | null>(null);
 
   const currentCharacterPickerUserId = useMemo(() => {
     if (!match) return null;
@@ -231,10 +232,15 @@ export default function GamePage() {
 
   const activeMatchIdRef = useRef<string | null>(null);
   const selectedOrderNumberRef = useRef(selectedOrderNumber);
+  const pendingLegacyMinigameRef = useRef<MinigameStartedEvent | null>(null);
 
   useEffect(() => {
     selectedOrderNumberRef.current = selectedOrderNumber;
   }, [selectedOrderNumber]);
+
+  useEffect(() => {
+    pendingLegacyMinigameRef.current = pendingLegacyMinigame;
+  }, [pendingLegacyMinigame]);
 
   useEffect(() => {
     if (match?.phase !== "active") {
@@ -579,23 +585,33 @@ export default function GamePage() {
         );
       }
 
-      await loadGame(false);
+      const legacyMinigame =
+        !turnResult.turn_plan && landingPreview?.previewText
+          ? buildLegacyMinigameEventFromPreview(
+              turnResult.updated_position,
+              landingPreview.previewText,
+            )
+          : null;
 
       setCurrentTurnPlan(turnResult.turn_plan ?? null);
+      setActiveLegacyMinigame(null);
+      setPendingLegacyMinigame(legacyMinigame);
+      pendingLegacyMinigameRef.current = legacyMinigame;
 
-      if (!turnResult.turn_plan && landingPreview?.previewText) {
-        const legacyMinigame = buildLegacyMinigameEventFromPreview(
-          turnResult.updated_position,
-          landingPreview.previewText,
-        );
-
-        setActiveLegacyMinigame(legacyMinigame);
-      } else {
-        setActiveLegacyMinigame(null);
-      }
+      await loadGame(false);
     },
     [currentMatchId, loadGame]
   );
+
+  const handleBoardMovementFinished = useCallback(() => {
+    const pending = pendingLegacyMinigameRef.current;
+
+    if (pending) {
+      setActiveLegacyMinigame(pending);
+      setPendingLegacyMinigame(null);
+      pendingLegacyMinigameRef.current = null;
+    }
+  }, []);
 
   const handleSubmitOrderNumber = useCallback(async (forcedNumber?: number) => {
     if (!match?.id) return;
@@ -938,6 +954,7 @@ export default function GamePage() {
               isMyTurn={isMyTurn}
               onPlayTurn={handlePlayTurn}
               onRollResolved={handleRollResolved}
+              onMovementFinished={handleBoardMovementFinished}
             />
 
             <div className="grid gap-6 2xl:grid-cols-[430px_430px_minmax(0,1fr)]">

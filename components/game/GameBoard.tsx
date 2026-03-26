@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { getMatchBoard, type TileFamily } from "@/lib/board";
 import { getCharacterTokenImage } from "@/lib/characters";
 import DiceRollPanel from "@/components/game/DiceRollPanel";
@@ -37,6 +37,7 @@ type GameBoardProps = {
   isMyTurn: boolean;
   onPlayTurn: () => Promise<PlayTurnResult | null>;
   onRollResolved: (result: PlayTurnResult) => Promise<void> | void;
+  onMovementFinished?: () => void;
 };
 
 function clampBoardPosition(position: number, lastTileIndex: number) {
@@ -93,9 +94,12 @@ export default function GameBoard({
   isMyTurn,
   onPlayTurn,
   onRollResolved,
+  onMovementFinished,
 }: GameBoardProps) {
   const BOARD = useMemo(() => getMatchBoard(matchId), [matchId]);
   const LAST_TILE_INDEX = BOARD.tiles[BOARD.tiles.length - 1]?.index ?? 0;
+  const hasMountedRef = useRef(false);
+  const previousPositionsSignatureRef = useRef<string>("");
 
   const currentUserPlayer = useMemo(
     () => players.find((player) => player.user_id === currentUserId) ?? null,
@@ -181,6 +185,38 @@ export default function GameBoard({
       });
     });
   }, [players, currentUserId, currentTurnUserId, winnerUserId, tilesByIndex, LAST_TILE_INDEX]);
+
+  const positionsSignature = useMemo(() => {
+    return [...players]
+      .sort((a, b) => a.user_id.localeCompare(b.user_id))
+      .map((player) => `${player.user_id}:${player.board_position}`)
+      .join("|");
+  }, [players]);
+
+  useEffect(() => {
+    if (!onMovementFinished) {
+      previousPositionsSignatureRef.current = positionsSignature;
+      return;
+    }
+
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      previousPositionsSignatureRef.current = positionsSignature;
+      return;
+    }
+
+    if (previousPositionsSignatureRef.current === positionsSignature) {
+      return;
+    }
+
+    previousPositionsSignatureRef.current = positionsSignature;
+
+    const timeout = window.setTimeout(() => {
+      onMovementFinished();
+    }, 720); // un poco más que duration-700
+
+    return () => window.clearTimeout(timeout);
+  }, [positionsSignature, onMovementFinished]);
 
   return (
     <section className="overflow-hidden rounded-[36px] border border-[#F1F6E8]/10 bg-[linear-gradient(180deg,rgba(12,18,13,0.96),rgba(7,10,8,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.46)]">
